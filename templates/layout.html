@@ -1,0 +1,140 @@
+{{/*
+  layout.html - Base template for all pages.
+  Uses Go template inheritance via per-page-type template sets.
+*/}}
+
+{{- define "layout"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body class="{{joinStrings .BodyClass " "}}">
+{{template "body" .}}
+</body>
+</html>
+{{- end}}
+
+{{- define "head"}}  <meta charset="utf-8"/>
+  <title>{{if .Page.Title}}{{.Page.Title}}{{else}}{{.Site.Title}}{{end}} | {{.Site.Slogan}}</title>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <link href="{{.Root}}/assets/nirvi.css" rel="stylesheet"/>
+  <style>
+    figure       { text-align: center; }
+    figcaption   { color: #555; }
+    a            { color: #2066bb; }
+    a:visited    { color: #2866bb; }
+    .text-center { text-align: center; }
+  </style>
+  {{htmlComment "link href=\"https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.css\" rel=\"stylesheet\"/>"}}
+{{- if .Page.Keywords}}
+  <meta name="keywords" content="{{joinStrings .Page.Keywords ", "}}">
+{{- end}}
+  <link rel="schema.DC" href="http://purl.org/dc/elements/1.1/">
+{{- if not (hasBodyClass .BodyClass "dirindex")}}
+  <meta name="DC.modified" content="{{formatDate .Page.ModifiedDate "day"}}">
+{{- end}}
+{{- if and .Page.IsPost .Page.Title}}
+  <meta name="DC.date.issued" content="{{formatDate .Page.PublishedDate "day"}}">
+  <meta name="citation_publication_date" content="{{formatDate .Page.PublishedDate "usday"}}">
+  <meta name="citation_title" content="{{.Page.Title}}">
+  <meta name="DC.title" content="{{.Page.Title}}">
+{{- range .Page.Authors}}
+  <meta name="citation_author" content="{{.}}">
+  <meta name="DC.creator" content="{{.}}">
+{{- end}}
+{{- end}}
+{{- template "head_meta" .}}
+{{- template "head_css" .}}
+{{- template "head_js" .}}
+{{template "head_style" .}}
+{{- end}}
+
+{{- define "body"}}
+<div id="sitehead"
+     style="-x-background-color:#ff8; max-width: 45em;
+	    display: flex;
+	    justify-content: space-between;
+	    align-items: center;
+	    ">
+  <style>
+    #sitehead 			{ margin: 0 auto; padding: 0 15px; font-family: sans; }
+    #sitehead #sitelogo a	{ font-size: 300%; font-weight: bolder; font-style: italic; }
+    #sitehead #sitelogo a	{ color: #313ca1; text-shadow: 3px 3px 1px rgba(49,60,161,0.3); text-decoration: none; }
+    #sitehead #sitelogo a:focus	{ outline: none; }
+    #sitehead #siteprojects,
+    #sitehead #sitenavlinks	{ font-weight: bolder; }
+    #sitehead #sitenavlinks span + span	{ margin-left: 0.8em; }
+  </style>
+  <div id="sitelogo">
+    <a href="{{.Site.URL}}" rel="home"><span style="font-size: 120%; letter-spacing: -0.1em;">T</span>estbit</a>
+  </div>
+  <div id="siteprojects">
+    <span><a href="{{.Root}}/projects">Projects</a></span>
+    {{htmlComment "<span><a href=\"https://beast.testbit.org\" target=\"_blank\">Beast</a></span>"}}
+  </div>
+  <div id="sitenavlinks">
+    {{htmlComment "<span><a href=\"tops.html\">TOPs</a></span>"}}
+    <span><a href="{{.Root}}/timj" title="Contact">Contact</a></span>
+    <span><a href="https://social.tchncs.de/@timj" rel="me" title="@timj (Mastodon)" target="_blank">@timj</a></span>
+    <span><a href="https://www.google.com/search?q=site:https://testbit.eu/" target="_blank">Search</a></span>
+  </div>
+</div>
+
+<div id="header">
+{{template "header" .}}
+</div>
+
+<div id="content">
+{{template "content" .}}
+</div>
+
+<div id="footer">
+  {{template "footer" .}}
+  <div id="footerlinks">
+    <span><a href="{{.Root}}/atom.xml">Feed</a></span>
+    <span><a href="{{.Root}}/impressum" title="Impressum">Impressum</a></span>
+    <style>
+      #footerlinks span + span { margin-left: 2em; }
+    </style>
+  </div>
+</div>
+
+{{template "body_js" .}}
+{{- end}}
+
+{{/* --- Default (empty/placeholder) blocks --- */}}
+
+{{- define "head_meta"}}{{- end}}
+{{- define "head_css"}}{{- end}}
+{{- define "head_js"}}{{- end}}
+
+{{- define "head_style"}}  <style>
+    #sitenav {
+      text-align: center;
+      font-family: "IBM Plex Sans", sans-serif;
+    }
+    #sitenav span { font-weight: bolder; padding: 0 0.3em; }
+    #sitenav span:hover { background-color: #eef; border-radius: 3px; }
+    IGNORE #sitenav a { color: inherit; }
+    IGNORE #sitenav a { color: #333; }
+    #sitenav .sitehome {  }
+  </style>
+{{- end}}
+
+{{- define "header"}}{{.Page.Header}}
+{{- end}}
+
+{{- define "content"}}{{.Page.Content}}
+{{- end}}
+
+{{- define "footer"}}<small>{{.Page.FooterUpdated}}</small>
+{{- end}}
+
+{{- define "body_js"}}
+
+<link rel="stylesheet" href="https://cdn.rawgit.com/tim-janik/cdn/a8a12dd652e48532faa39657bc5cc268525a89ca/highlightjs9/styles/github.min.css">
+<script src="https://cdn.rawgit.com/tim-janik/cdn/a8a12dd652e48532faa39657bc5cc268525a89ca/highlightjs9/highlight.min.js"></script>
+<script>hljs.initHighlighting()</script>
+{{- end}}
+
+{{- define "index_title"}}{{- end}}

@@ -1,0 +1,8 @@
+{{/*
+  topindex.html - Template for the top-level index page.
+  Overrides head_meta to add RSS feed link.
+  ShowIndexTitle=false suppresses the directory title.
+*/}}
+
+{{- define "head_meta"}}  <link rel="alternate" type="application/rss+xml" title="Feed" href="{{.Site.FeedURL}}" />
+{{- end}}

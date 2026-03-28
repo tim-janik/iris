@@ -1,0 +1,51 @@
+{{/*
+  rss2.xml - RSS 2.0 feed template.
+  Uses text/template to preserve XML whitespace/indentation.
+*/}}
+
+{{- define "rss2"}}<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"
+     xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <language>en</language>
+    <title>{{.Site.Title}}</title>
+    <description>{{.Site.Slogan}}</description>
+    <link>{{urlJoin .Site.URL ""}}</link>
+    <atom:link rel="self" type="application/rss+xml" href="{{.FeedURL}}"/>
+    <ttl>60</ttl>
+{{- range .Site.Authors}}
+    <dc:creator><![CDATA[{{.}}]]></dc:creator>
+{{- end}}
+{{- if .Site.Copyright}}
+    <copyright>{{.Site.Copyright}}</copyright>
+{{- end}}
+{{- if or .Site.LogoHref .Site.IconHref}}
+    <image>
+      <title>{{.Site.Title}}</title>
+      <url>{{urlJoin .Site.URL (or .Site.LogoHref .Site.IconHref)}}</url>
+      <link>{{urlJoin .Site.URL ""}}</link>
+    </image>
+{{- end}}
+    <generator>Iris - https://github.com/tim-janik/iris/</generator>
+{{- range .Items}}
+    <item>
+      <title>{{.Title}}</title>
+      <link>{{.URL}}</link>
+      <guid isPermaLink="true">{{.URL}}</guid>
+      <pubDate>{{formatDate .PublishedDate "rfc822z"}}</pubDate>
+      <source url="{{$.FeedURL}}">{{.SiteTitle}}</source>
+{{- range .Keywords}}
+      <category><![CDATA[{{.}}]]></category>
+{{- end}}
+{{- if or .Options.WithDescription (not .Options.WithContent)}}
+      <description>{{.Excerpt}}</description>
+{{- end}}
+{{- if .Options.WithContent}}
+      <content:encoded><![CDATA[{{.FullContent}}]]></content:encoded>
+{{- end}}
+    </item>
+{{- end}}
+    <lastBuildDate>{{formatDate .LastBuild "rfc822z"}}</lastBuildDate>
+  </channel>
+</rss>
+{{- end}}
