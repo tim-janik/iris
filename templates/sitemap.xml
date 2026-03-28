@@ -1,0 +1,16 @@
+{{/*
+  sitemap.xml - Sitemap template.
+  Uses text/template to preserve XML whitespace/indentation.
+*/}}
+
+{{- define "sitemap"}}<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!-- Generator: Iris (https://github.com/tim-janik/iris/) -->
+{{- range .Pages}}
+  <url>
+    <priority>{{.Priority}}</priority><loc>{{.Loc}}</loc>
+    <changefreq>{{.Changefreq}}</changefreq><lastmod>{{.LastMod}}</lastmod>
+  </url>
+{{- end}}
+</urlset>
+{{- end}}

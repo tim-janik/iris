@@ -1,0 +1,43 @@
+{{/*
+  post.html - Template for blog post pages.
+  Overrides content to add comment section (Jinja2 super() equivalent).
+  Overrides head_style and body_js for post-specific content.
+*/}}
+
+{{- define "content"}}{{.Page.Content}}
+
+<div class="commentsect">
+<div style="text-align:right; font-family: sans">
+{{.Page.CommentLink}}</div>
+{{- if .Comments}}
+<div class="title"><br /><big><b>Comments:</b></big></div>
+<div class="commentlist">
+{{- range .Comments}}
+<div class="comment">
+{{.}}
+</div>
+{{- end}}
+</div>
+{{- end}}
+</div>
+{{- end}}
+
+{{- define "head_style"}}<style>
+  #sitenav {
+    text-align: center;
+    font-family: "IBM Plex Sans", sans-serif;
+  }
+  #sitenav span { font-weight: bolder; padding: 0 0.3em; }
+  #sitenav span:hover { background-color: #eef; border-radius: 3px; }
+  IGNORE #sitenav a { color: inherit; }
+  IGNORE #sitenav a { color: #333; }
+  #sitenav .sitehome {  }
+</style>
+{{- end}}
+
+{{- define "body_js"}}
+
+<link rel="stylesheet" href="https://cdn.rawgit.com/tim-janik/cdn/a8a12dd652e48532faa39657bc5cc268525a89ca/highlightjs9/styles/github.min.css">
+<script src="https://cdn.rawgit.com/tim-janik/cdn/a8a12dd652e48532faa39657bc5cc268525a89ca/highlightjs9/highlight.min.js"></script>
+<script>hljs.initHighlighting()</script>
+{{- end}}

@@ -1,0 +1,21 @@
+{{/*
+  page.html - Template for regular pages.
+  Overrides head_style to add page-specific CSS.
+*/}}
+
+{{- define "head_style"}}<style>
+  #sitenav {
+    text-align: center;
+    font-family: "IBM Plex Sans", sans-serif;
+  }
+  #sitenav span { font-weight: bolder; padding: 0 0.3em; }
+  #sitenav span:hover { background-color: #eef; border-radius: 3px; }
+  IGNORE #sitenav a { color: inherit; }
+  IGNORE #sitenav a { color: #333; }
+  #sitenav .sitehome {  }
+</style>
+<style>
+  body.page h1, body.page h2, body.page h3, body.page h4, body.page h5,
+  body.page h6	{ border: 0; }
+</style>
+{{- end}}
