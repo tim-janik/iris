@@ -671,11 +671,12 @@ func writeConfigTOML(w io.Writer, cfg SiteConfig) error {
 
 // ssgArgs holds the parsed SSG command arguments.
 type ssgArgs struct {
-	clearOutput bool
-	inputDir    string
-	outputDir   string
-	configFile  string // explicit config file path (-c flag)
-	workers     int    // max concurrent pandoc/asciidoctor workers
+	clearOutput  bool
+	inputDir     string
+	outputDir    string
+	configFile   string // explicit config file path (-c flag)
+	templateDir  string // custom template directory (-t flag, overrides embedded)
+	workers      int    // max concurrent pandoc/asciidoctor workers
 }
 
 // parseSSGArgs parses command-line arguments for the ssg subcommand.
@@ -683,6 +684,7 @@ func parseSSGArgs() ssgArgs {
 	fs := flag.NewFlagSet("ssg", flag.ExitOnError)
 	clearOutput := fs.Bool("C", true, "clean output directory before building (default true)")
 	configFile := fs.String("c", "", "path to site config file (TOML)")
+	templateDir := fs.String("t", "", "custom template directory (overrides embedded templates)")
 	workers := fs.Int("j", 0, "max concurrent pandoc/asciidoctor workers (0 = NumCPU)")
 	fs.Parse(os.Args[2:])
 
@@ -700,7 +702,7 @@ func parseSSGArgs() ssgArgs {
 		w = runtime.NumCPU()
 	}
 
-	return ssgArgs{clearOutput: *clearOutput, inputDir: inputDir, outputDir: outputDir, configFile: *configFile, workers: w}
+	return ssgArgs{clearOutput: *clearOutput, inputDir: inputDir, outputDir: outputDir, configFile: *configFile, templateDir: *templateDir, workers: w}
 }
 
 // parseInitArgs parses command-line arguments for the init subcommand.
@@ -724,10 +726,11 @@ func prepareOutputDir(dir string, clear bool) {
 	}
 }
 
-// initEngine creates the template engine from the templates directory.
-func initEngine() *templates.Engine {
-	tmplDir := filepath.Join(filepath.Dir(execPath()), "templates")
-	eng, err := templates.New(tmplDir)
+// initEngine creates the template engine.
+// If templateDir is non-empty, templates are loaded from that directory.
+// Otherwise, embedded templates are used.
+func initEngine(templateDir string) *templates.Engine {
+	eng, err := templates.New(templateDir)
 	if err != nil {
 		log.Fatalf("init templates: %v", err)
 	}
@@ -791,7 +794,7 @@ func ssgMain() {
 
 	prepareOutputDir(args.outputDir, args.clearOutput)
 
-	eng := initEngine()
+	eng := initEngine(args.templateDir)
 	site := loadSiteConfig(args.inputDir, args.configFile)
 	// Default feed_url to site URL + "/rss2.xml" when not specified
 	if site.FeedURL == "" {

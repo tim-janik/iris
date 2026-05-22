@@ -8,7 +8,7 @@ import (
 )
 
 func TestEngineCreation(t *testing.T) {
-	eng, err := New(".")
+	eng, err := New("")
 	if err != nil {
 		t.Fatalf("New(): %v", err)
 	}
@@ -138,7 +138,7 @@ func TestBuildFeedItems(t *testing.T) {
 // --- helpers ---
 
 func mustNewEngine(t *testing.T) *Engine {
-	eng, err := New(".")
+	eng, err := New("")
 	if err != nil {
 		t.Fatalf("New(): %v", err)
 	}
