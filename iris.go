@@ -5,15 +5,18 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"io"
 	"io/fs"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -473,23 +476,23 @@ func findDirs(pages []*InputPage) []string {
 
 // SiteConfig from user config or defaults.
 type SiteConfig struct {
-	Title         string   `toml:"title"`
-	Slogan        string   `toml:"slogan"`
-	Description   string   `toml:"description"`
-	URL           string   `toml:"url"`
-	Authors       []string `toml:"authors"`
-	Copyright     string   `toml:"copyright"`
-	FeedURL       string   `toml:"feed_url"`
-	FeedAge       int      `toml:"feed_age"`
-	TeaserLen     int      `toml:"teaser_len"`
-	DescLen       int      `toml:"desc_len"`
-	IconHref      string   `toml:"icon_href"`
-	LogoHref      string   `toml:"logo_href"`
-	CommentsDir   string   `toml:"comments_dir"`
-	CommentsEmail string   `toml:"comments_email"`
-	IncludeGlob   []string `toml:"include_glob"`
-	AssetGlob     []string `toml:"asset_glob"`
-	ExcludeGlob   []string `toml:"exclude_glob"`
+	Title         string   `toml:"title"          comment:"Site title (used in <title>, feeds, fallback page title)"`
+	Slogan        string   `toml:"slogan"         comment:"Short tagline displayed in the header"`
+	Description   string   `toml:"description"    comment:"Longer description for <meta> tags and feeds"`
+	URL           string   `toml:"url"            comment:"Base URL for absolute links and sitemap"`
+	Authors       []string `toml:"authors"        comment:"Default authors (used when page frontmatter has none)"`
+	Copyright     string   `toml:"copyright"      comment:"Copyright text for footer"`
+	FeedURL       string   `toml:"feed_url"       comment:"URL referenced in feed <link> tags"`
+	FeedAge       int      `toml:"feed_age"       comment:"Max post age in days for feeds; -1 = no cutoff"`
+	TeaserLen     int      `toml:"teaser_len"     comment:"Excerpt length for RSS/Atom feeds (characters)"`
+	DescLen       int      `toml:"desc_len"       comment:"Excerpt length for directory index listings (characters)"`
+	IconHref      string   `toml:"icon_href"      comment:"Favicon path"`
+	LogoHref      string   `toml:"logo_href"      comment:"Logo image path"`
+	CommentsDir   string   `toml:"comments_dir"   comment:"Directory containing .eml comment files"`
+	CommentsEmail string   `toml:"comments_email" comment:"Email template for comment posting (%s = page LUID)"`
+	IncludeGlob   []string `toml:"include_glob"   comment:"Glob patterns for files to process (e.g. \"20*/**/*.md\", \"**/*.adoc\")"`
+	AssetGlob     []string `toml:"asset_glob"     comment:"Glob patterns for static assets (copied verbatim, no sitemap entry)"`
+	ExcludeGlob   []string `toml:"exclude_glob"   comment:"Glob patterns for files to skip (default: skip _-prefixed files)"`
 }
 
 func defaultSiteConfig() SiteConfig {
@@ -505,6 +508,8 @@ func defaultSiteConfig() SiteConfig {
 		TeaserLen:   300,
 		DescLen:     240,
 		IconHref:    "/favicon.ico",
+		IncludeGlob: []string{},
+		AssetGlob:   []string{},
 		ExcludeGlob: []string{"_*"}, // default: skip config/template prefixes
 	}
 }
@@ -597,6 +602,73 @@ func renderPage(eng *templates.Engine, pg *InputPage, site templates.SiteConfig)
 // Main
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Init subcommand — scaffold a default config file
+// ---------------------------------------------------------------------------
+
+const defaultConfigPath = "_siteconfig.toml"
+
+// initConfig writes a default config file to the given path.
+// If path is empty, defaults to "_siteconfig.toml" in the current directory.
+func initConfig(path string) {
+	if path == "" {
+		path = defaultConfigPath
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "create config: %v\n", err)
+		os.Exit(1)
+	}
+	defer f.Close()
+
+	cfg := defaultSiteConfig()
+	if err := writeConfigTOML(f, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "encode config: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Created config file: %s\n", path)
+}
+
+// writeConfigTOML serializes a SiteConfig to TOML with per-field comments
+// sourced from the struct's "comment" tag.
+func writeConfigTOML(w io.Writer, cfg SiteConfig) error {
+	t := reflect.TypeOf(cfg)
+	v := reflect.ValueOf(cfg)
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		comment := field.Tag.Get("comment")
+		tomlKey := field.Tag.Get("toml")
+		if tomlKey == "" {
+			tomlKey = field.Name
+		}
+
+		// Write comment
+		if comment != "" {
+			fmt.Fprintf(w, "# %s\n", comment)
+		}
+
+		// Format value
+		val := v.Field(i)
+		switch val.Kind() {
+		case reflect.String:
+			fmt.Fprintf(w, "%s = %q\n\n", tomlKey, val.String())
+		case reflect.Int:
+			fmt.Fprintf(w, "%s = %d\n\n", tomlKey, val.Int())
+		case reflect.Slice:
+			elems := make([]string, val.Len())
+			for j := 0; j < val.Len(); j++ {
+				elems[j] = strconv.Quote(val.Index(j).String())
+			}
+			fmt.Fprintf(w, "%s = [%s]\n\n", tomlKey, strings.Join(elems, ", "))
+		}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
 // ssgArgs holds the parsed SSG command arguments.
 type ssgArgs struct {
 	clearOutput bool
@@ -608,11 +680,6 @@ type ssgArgs struct {
 
 // parseSSGArgs parses command-line arguments for the ssg subcommand.
 func parseSSGArgs() ssgArgs {
-	if len(os.Args) < 2 || os.Args[1] != "ssg" {
-		fmt.Fprintf(os.Stderr, "Usage: %s ssg [flags] <input-dir> <output-dir>\n", os.Args[0])
-		os.Exit(1)
-	}
-
 	fs := flag.NewFlagSet("ssg", flag.ExitOnError)
 	clearOutput := fs.Bool("C", true, "clean output directory before building (default true)")
 	configFile := fs.String("c", "", "path to site config file (TOML)")
@@ -634,6 +701,14 @@ func parseSSGArgs() ssgArgs {
 	}
 
 	return ssgArgs{clearOutput: *clearOutput, inputDir: inputDir, outputDir: outputDir, configFile: *configFile, workers: w}
+}
+
+// parseInitArgs parses command-line arguments for the init subcommand.
+func parseInitArgs() string {
+	fs := flag.NewFlagSet("init", flag.ExitOnError)
+	path := fs.String("o", "", "output file (default: _siteconfig.toml; overwrites if exists)")
+	fs.Parse(os.Args[2:])
+	return *path
 }
 
 // prepareOutputDir removes and recreates the output directory if requested.
@@ -679,6 +754,37 @@ func toTemplateSite(site SiteConfig) templates.SiteConfig {
 }
 
 func main() {
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(1)
+	}
+
+	switch os.Args[1] {
+	case "init":
+		initConfig(parseInitArgs())
+	case "ssg":
+		ssgMain()
+	default:
+		fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n", os.Args[1])
+		printUsage()
+		os.Exit(1)
+	}
+}
+
+// printUsage prints the usage summary to stderr.
+func printUsage() {
+	fmt.Fprintf(os.Stderr, `Usage: iris <subcommand> [flags]
+
+Subcommands:
+  init      Create _siteconfig.toml with default settings
+  ssg       Build the site (convert, render, generate feeds/sitemap)
+
+Run "iris <subcommand> -h" for more information on a subcommand.
+`)
+}
+
+// ssgMain is the main entry point for the ssg subcommand.
+func ssgMain() {
 	args := parseSSGArgs()
 	log.Printf("Input:  %s", args.inputDir)
 	log.Printf("Output: %s", args.outputDir)
