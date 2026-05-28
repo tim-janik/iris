@@ -171,27 +171,33 @@ func (s *Server) Serve() error {
 		// Parse frontmatter for title
 		fm, _ := parseServeFrontmatter(data)
 
-		// Convert via pandoc or asciidoctor
-		var htmlStr string
+		// Convert via pandoc or asciidoctor (disassemble to get body content only)
+		var bodyContent string
+		var convertedTitle string
 		if strings.HasSuffix(absPath, ".adoc") {
-			htmlStr, err = adoc.Convert(s.AdocConfig, data)
+			res, convErr := adoc.ConvertAndDisassemble(s.AdocConfig, data)
+			if convErr != nil {
+				log.Printf("[500] %s -> %s: %v", urlPath, absPath, convErr)
+				http.Error(w, fmt.Sprintf("Internal Server Error: %v", convErr), http.StatusInternalServerError)
+				return
+			}
+			bodyContent = res.Content
+			convertedTitle = res.Title
 		} else {
-			htmlStr, err = pandoc.Convert(cfg, data, "")
-		}
-		if err != nil {
-			log.Printf("[500] %s -> %s: %v", urlPath, absPath, err)
-			http.Error(w, fmt.Sprintf("Internal Server Error: %v", err), http.StatusInternalServerError)
-			return
+			res, convErr := pandoc.ConvertAndDisassemble(cfg, data, "")
+			if convErr != nil {
+				log.Printf("[500] %s -> %s: %v", urlPath, absPath, convErr)
+				http.Error(w, fmt.Sprintf("Internal Server Error: %v", convErr), http.StatusInternalServerError)
+				return
+			}
+			bodyContent = res.Content
+			convertedTitle = res.Title
 		}
 
-		// Resolve title: frontmatter > pandoc/asciidoctor extracted <h1>
+		// Resolve title: frontmatter > converter-extracted title
 		title := fm.Title
 		if title == "" {
-			if doc, pErr := htmlutil.Parse(htmlStr); pErr == nil {
-				if h1 := htmlutil.FindByTag(doc, "h1"); h1 != nil {
-					title = htmlutil.Text(h1)
-				}
-			}
+			title = convertedTitle
 		}
 
 		// Render through serve.html template
