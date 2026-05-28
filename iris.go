@@ -721,14 +721,16 @@ func parseInitArgs() string {
 
 // serveArgs holds the parsed serve command arguments.
 type serveArgs struct {
-	root string // directory containing markdown files
-	port int    // TCP port to listen on
+	root        string // directory containing markdown files
+	port        int    // TCP port to listen on
+	editLinkCmd string // command template for edit links (empty = disabled)
 }
 
 // parseServeArgs parses command-line arguments for the serve subcommand.
 func parseServeArgs() serveArgs {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	port := fs.Int("port", 9454, "TCP port to listen on (default: 9454)")
+	editLinkCmd := fs.String("editlink", "", "command template to open source file in editor (empty = disabled); use %s for file path, %u for line number")
 	fs.Parse(os.Args[2:])
 
 	args := fs.Args()
@@ -738,7 +740,7 @@ func parseServeArgs() serveArgs {
 	}
 
 	root, _ := filepath.Abs(args[0])
-	return serveArgs{root: root, port: *port}
+	return serveArgs{root: root, port: *port, editLinkCmd: *editLinkCmd}
 }
 
 // serveMain is the main entry point for the serve subcommand.
@@ -754,6 +756,7 @@ func serveMain() {
 		Port:         args.port,
 		PandocConfig: pandoc.DefaultConfig(),
 		AdocConfig:   adoc.DefaultConfig(),
+		EditLinkCmd:  args.editLinkCmd,
 	}
 
 	if err := srv.Serve(); err != nil {

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/tim-janik/iris/adoc"
+	"github.com/tim-janik/iris/editlink"
 	"github.com/tim-janik/iris/pandoc"
 )
 
@@ -26,6 +27,16 @@ type Server struct {
 	PandocConfig pandoc.Config
 	// AdocConfig controls asciidoctor invocation; zero value uses defaults.
 	AdocConfig adoc.Config
+	// EditLinkCmd is the command template for opening source files in an editor.
+	// If empty, edit links are disabled.
+	//
+	// Supported placeholders:
+	//   %s — source file path
+	//   %u — line number (substituted only if present in template)
+	//
+	// Example:
+	//   gnome-terminal -- $EDITOR +%u %s
+	EditLinkCmd string
 }
 
 // normalizePath ensures the URL path starts with a slash.
@@ -117,8 +128,13 @@ func (s *Server) Serve() error {
 		w.Write([]byte(html))
 	})
 
+	handler := http.Handler(mux)
+	if s.EditLinkCmd != "" {
+		handler = editlink.Handler(editlink.Config{Cmd: s.EditLinkCmd}, mux, s.Root)
+	}
+
 	addr := fmt.Sprintf(":%d", s.Port)
 	log.Printf("Serve running at http://localhost%s/", addr)
 	log.Printf("Root: %s", s.Root)
-	return http.ListenAndServe(addr, mux)
+	return http.ListenAndServe(addr, handler)
 }
