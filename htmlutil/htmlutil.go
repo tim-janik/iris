@@ -111,6 +111,22 @@ func findElement(node *html.Node, pred func(*html.Node) bool) *html.Node {
 	return nil
 }
 
+// AppendChild adds child as the last child of parent.
+func AppendChild(parent, child *html.Node) {
+	if child.Parent != nil || child.PrevSibling != nil || child.NextSibling != nil {
+		panic("htmlutil: AppendChild called for an attached child Node")
+	}
+	child.Parent = parent
+	child.NextSibling = nil
+	if last := parent.LastChild; last != nil {
+		last.NextSibling = child
+		child.PrevSibling = last
+	} else {
+		parent.FirstChild = child
+	}
+	parent.LastChild = child
+}
+
 // Remove removes a node from its parent.
 func Remove(node *html.Node) {
 	if node.Parent == nil {
