@@ -15,7 +15,6 @@ import (
 
 	"github.com/tim-janik/iris/adoc"
 	"github.com/tim-janik/iris/editlink"
-	"github.com/tim-janik/iris/htmlutil"
 	"github.com/tim-janik/iris/mimetype"
 	"github.com/tim-janik/iris/pandoc"
 	"github.com/tim-janik/iris/templates"
@@ -204,7 +203,7 @@ func (s *Server) Serve() error {
 		serveData := templates.ServeData{
 			Site:  s.Site,
 			Title: title,
-			Content: htmplt.HTML(htmlStr),
+			Content: htmplt.HTML(bodyContent),
 		}
 		htmlBytes, err := eng.RenderServe(serveData)
 		if err != nil {
