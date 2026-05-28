@@ -88,8 +88,8 @@ func (rc *responseCapture) flush(w http.ResponseWriter) {
 func Handler(cfg Config, next http.Handler, srcRoot string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		srcPath := resolveSourcePath(r.URL.Path, srcRoot)
-		if srcPath == "" {
-			// No source file found — pass through to next handler
+		if srcPath == "" || (!strings.HasSuffix(srcPath, ".md") && !strings.HasSuffix(srcPath, ".adoc")) {
+			// No source file or not a convertible type — pass through
 			next.ServeHTTP(w, r)
 			return
 		}

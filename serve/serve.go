@@ -14,6 +14,7 @@ import (
 
 	"github.com/tim-janik/iris/adoc"
 	"github.com/tim-janik/iris/editlink"
+	"github.com/tim-janik/iris/mimetype"
 	"github.com/tim-janik/iris/pandoc"
 )
 
@@ -100,6 +101,34 @@ func (s *Server) Serve() error {
 		if !found {
 			log.Printf("[404] %s (not found)", urlPath)
 			http.Error(w, fmt.Sprintf("Not Found: %s", urlPath), http.StatusNotFound)
+			return
+		}
+
+		ext := strings.ToLower(filepath.Ext(absPath))
+
+		// .md and .adoc are converted; known MIME-type extensions are pass-through; everything else is 404.
+		if ext != ".md" && ext != ".adoc" {
+			if !mimetype.IsPassthrough(ext) {
+				log.Printf("[404] %s (unsupported type)", urlPath)
+				http.Error(w, fmt.Sprintf("Not Found: %s", urlPath), http.StatusNotFound)
+				return
+			}
+			log.Printf("[200] %s -> %s (passthrough)", urlPath, absPath)
+			w.Header().Set("Content-Type", mimetype.Lookup(ext))
+			f, err := os.Open(absPath)
+			if err != nil {
+				log.Printf("[500] %s: open error: %v", absPath, err)
+				http.Error(w, fmt.Sprintf("Internal Server Error: %v", err), http.StatusInternalServerError)
+				return
+			}
+			defer f.Close()
+			info, err := f.Stat()
+			if err != nil {
+				log.Printf("[500] %s: stat error: %v", absPath, err)
+				http.Error(w, fmt.Sprintf("Internal Server Error: %v", err), http.StatusInternalServerError)
+				return
+			}
+			http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 			return
 		}
 
