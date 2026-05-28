@@ -15,6 +15,7 @@ import (
 
 	"github.com/tim-janik/iris/adoc"
 	"github.com/tim-janik/iris/editlink"
+	"github.com/tim-janik/iris/htmlutil"
 	"github.com/tim-janik/iris/mimetype"
 	"github.com/tim-janik/iris/pandoc"
 	"github.com/tim-janik/iris/templates"
@@ -70,6 +71,26 @@ func parseServeFrontmatter(content []byte) (*serveFrontmatter, string) {
 	}
 	yaml.Unmarshal([]byte(text[4:4+idx]), fm)
 	return fm, strings.TrimLeft(text[4+idx+4:], "\n")
+}
+
+// extractBodyAndTitle parses a full HTML document and returns the body's inner
+// HTML (including any <h1>) and the page title (from <title> or first <h1>).
+func extractBodyAndTitle(htmlStr string) (string, string) {
+	doc, err := htmlutil.Parse(htmlStr)
+	if err != nil {
+		return htmlStr, ""
+	}
+	title := htmlutil.Text(htmlutil.FindByTag(doc, "title"))
+	body := htmlutil.FindByTag(doc, "body")
+	if body == nil {
+		return htmlStr, title
+	}
+	if title == "" {
+		if h1 := htmlutil.FindByTag(body, "h1"); h1 != nil {
+			title = htmlutil.Text(h1)
+		}
+	}
+	return strings.TrimSpace(htmlutil.InnerHTML(body)), title
 }
 
 // normalizePath ensures the URL path starts with a slash.
@@ -170,27 +191,25 @@ func (s *Server) Serve() error {
 		// Parse frontmatter for title
 		fm, _ := parseServeFrontmatter(data)
 
-		// Convert via pandoc or asciidoctor (disassemble to get body content only)
+		// Convert via pandoc or asciidoctor, extract full body (including <h1>)
 		var bodyContent string
 		var convertedTitle string
 		if strings.HasSuffix(absPath, ".adoc") {
-			res, convErr := adoc.ConvertAndDisassemble(s.AdocConfig, data)
+			htmlStr, convErr := adoc.Convert(s.AdocConfig, data)
 			if convErr != nil {
 				log.Printf("[500] %s -> %s: %v", urlPath, absPath, convErr)
 				http.Error(w, fmt.Sprintf("Internal Server Error: %v", convErr), http.StatusInternalServerError)
 				return
 			}
-			bodyContent = res.Content
-			convertedTitle = res.Title
+			bodyContent, convertedTitle = extractBodyAndTitle(htmlStr)
 		} else {
-			res, convErr := pandoc.ConvertAndDisassemble(cfg, data, "")
+			htmlStr, convErr := pandoc.Convert(cfg, data, "")
 			if convErr != nil {
 				log.Printf("[500] %s -> %s: %v", urlPath, absPath, convErr)
 				http.Error(w, fmt.Sprintf("Internal Server Error: %v", convErr), http.StatusInternalServerError)
 				return
 			}
-			bodyContent = res.Content
-			convertedTitle = res.Title
+			bodyContent, convertedTitle = extractBodyAndTitle(htmlStr)
 		}
 
 		// Resolve title: frontmatter > converter-extracted title
