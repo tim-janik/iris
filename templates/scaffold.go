@@ -30,7 +30,7 @@ import (
 	"time"
 )
 
-//go:embed layout.html page.html post.html dirindex.html topindex.html rss2.xml atom.xml sitemap.xml serve.css serve.html
+//go:embed layout.html page.html post.html dirindex.html topindex.html rss2.xml atom.xml sitemap.xml serve.html
 var templateFS embed.FS
 
 // ---------------------------------------------------------------------------

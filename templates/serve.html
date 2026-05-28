@@ -9,6 +9,7 @@
   <meta charset="utf-8"/>
   <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
   <title>{{if .Title}}{{.Title}}{{else}}{{.Site.Title}}{{end}} | {{.Site.Slogan}}</title>
+  <style>body{max-width:99em;margin:0 auto}</style>
   {{if .Site.Stylesheet}}<link href="{{.Site.Stylesheet}}" rel="stylesheet"/>{{end}}
 </head>
 <body class="serve {{.BodyClass}}">
