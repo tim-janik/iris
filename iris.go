@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"runtime/debug"
 	"io"
 	"io/fs"
 	"log"
@@ -752,6 +753,7 @@ func serveMain() {
 		Root:         args.root,
 		Port:         args.port,
 		PandocConfig: pandoc.DefaultConfig(),
+		AdocConfig:   adoc.DefaultConfig(),
 	}
 
 	if err := srv.Serve(); err != nil {
@@ -817,6 +819,8 @@ func main() {
 		ssgMain()
 	case "serve":
 		serveMain()
+	case "version":
+		printVersion()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n", os.Args[1])
 		printUsage()
@@ -832,6 +836,7 @@ Subcommands:
   init      Create _siteconfig.toml with default settings
   ssg       Build the site (convert, render, generate feeds/sitemap)
   serve     Start an HTTP server that renders .md files to HTML on-the-fly
+  version   Print version and build information
 
 Run "iris <subcommand> -h" for more information on a subcommand.
 
@@ -839,6 +844,28 @@ Examples:
   iris serve ./docs --port 9454
 	Serves all .md files under ./docs as rendered HTML on localhost:9454
 `)
+}
+
+// printVersion prints version and VCS build information.
+func printVersion() {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		fmt.Println("iris (no build info)")
+		return
+	}
+	fmt.Printf("iris %s\n", info.Main.Version)
+	if info.Main.Sum != "" {
+		fmt.Printf("  module: %s %s\n", info.Main.Path, info.Main.Sum)
+	}
+	for _, dep := range info.Deps {
+		fmt.Printf("  %s %s\n", dep.Path, dep.Version)
+	}
+	if settings := info.Settings; len(settings) > 0 {
+		fmt.Println()
+		for _, s := range settings {
+			fmt.Printf("  %s=%s\n", s.Key, s.Value)
+		}
+	}
 }
 
 // ssgMain is the main entry point for the ssg subcommand.
