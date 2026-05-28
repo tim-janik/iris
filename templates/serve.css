@@ -1,0 +1,5 @@
+/* serve.css — override pandoc's default narrow max-width for iris serve */
+body {
+    max-width: 99em;
+    margin: 0 auto;
+}

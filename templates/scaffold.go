@@ -30,7 +30,7 @@ import (
 	"time"
 )
 
-//go:embed layout.html page.html post.html dirindex.html topindex.html rss2.xml atom.xml sitemap.xml
+//go:embed layout.html page.html post.html dirindex.html topindex.html rss2.xml atom.xml sitemap.xml serve.css serve.html
 var templateFS embed.FS
 
 // ---------------------------------------------------------------------------
@@ -51,6 +51,7 @@ type SiteConfig struct {
 	FeedAge     int      // site.feed_age (max age in days for RSS/Atom, -1 = unlimited)
 	TeaserLen   int      // site.teaser_len (excerpt length for feeds)
 	DescLen     int      // site.desc_len (excerpt length for directory listings)
+	Stylesheet  string   // custom stylesheet path; empty = use converter defaults
 }
 
 // PageData holds per-page data, mirroring the Jinja2 `page` object.
@@ -166,10 +167,20 @@ type Engine struct {
 	postTmpl  *htmplt.Template
 	dirTmpl   *htmplt.Template
 	topTmpl   *htmplt.Template
+	// Serve template - minimal skeleton for iris serve.
+	serveTmpl *htmplt.Template
 	// XML feed templates use text/template to avoid over-escaping
 	// of XML constructs like <?xml, <![CDATA[ etc.
 	feedTmpl  *txtplt.Template
 	siteTmpl  *txtplt.Template
+}
+
+// ServeData is the top-level data structure for serve.html rendering.
+type ServeData struct {
+	Site      SiteConfig
+	Title     string
+	Content   htmplt.HTML
+	BodyClass string
 }
 
 // New creates a new Engine by parsing Go templates.
@@ -255,9 +266,9 @@ func New(templateDir string) (*Engine, error) {
 		return txtplt.New("").Funcs(txtFuncs).ParseFS(templateFS, names...)
 	}
 	var (
-		pageTmpl, postTmpl, dirTmpl, topTmpl *htmplt.Template
-		feedTmpl, siteTmpl                   *txtplt.Template
-		err                                  error
+		pageTmpl, postTmpl, dirTmpl, topTmpl, serveTmpl *htmplt.Template
+		feedTmpl, siteTmpl                              *txtplt.Template
+		err                                             error
 	)
 
 	pageTmpl, err = parseHTML("layout.html", "page.html")
@@ -290,13 +301,19 @@ func New(templateDir string) (*Engine, error) {
 		return nil, fmt.Errorf("parse sitemap templates: %w", err)
 	}
 
+	serveTmpl, err = parseHTML("serve.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse serve template: %w", err)
+	}
+
 	return &Engine{
 		pageTmpl: pageTmpl,
 		postTmpl: postTmpl,
 		dirTmpl:  dirTmpl,
 		topTmpl:  topTmpl,
-		feedTmpl: feedTmpl,
-		siteTmpl: siteTmpl,
+		feedTmpl:  feedTmpl,
+		siteTmpl:  siteTmpl,
+		serveTmpl: serveTmpl,
 	}, nil
 }
 
@@ -354,6 +371,14 @@ func (e *Engine) RenderAtom(data FeedData) ([]byte, error) {
 func (e *Engine) RenderSitemap(data SitemapData) ([]byte, error) {
 	var buf bytes.Buffer
 	err := e.siteTmpl.ExecuteTemplate(&buf, "sitemap", data)
+	return buf.Bytes(), err
+}
+
+// RenderServe renders a page using the serve.html minimal skeleton.
+// Used by iris serve for on-the-fly rendering with proper <title> and optional stylesheet.
+func (e *Engine) RenderServe(data ServeData) ([]byte, error) {
+	var buf bytes.Buffer
+	err := e.serveTmpl.ExecuteTemplate(&buf, "serve", data)
 	return buf.Bytes(), err
 }
 
