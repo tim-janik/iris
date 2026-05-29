@@ -218,6 +218,155 @@ func sampleFeedData() FeedData {
 	}
 }
 
+func TestRenderRSS_XMLEscaping(t *testing.T) {
+	eng := mustNewEngine(t)
+	now := time.Now()
+	data := FeedData{
+		Site: SiteConfig{
+			Title:   "Site & \"Title\" <with> specials",
+			Slogan:  "A & B",
+			URL:     "https://example.com/",
+			Authors: []string{"Author & Co"},
+		},
+		FeedURL: "https://example.com/rss2.xml",
+		Items: []FeedItem{
+			{
+				Title:       "Post with ]]> CDATA killer",
+				URL:         "https://example.com/post",
+				PublishedDate: now,
+				ModifiedDate:  now,
+				Keywords:    []string{"tag & stuff", "another<one"},
+				Excerpt:     "Text with <tags> & \"quotes\" inside",
+				FullContent: htmplt.HTML(`<p>Hello & welcome</p><span>]]>CDATA</span>`),
+				SiteTitle:   "Site & \"Title\" <with> specials",
+				Options:     FeedOptions{WithDescription: true, WithContent: true},
+			},
+		},
+		LastBuild: now,
+	}
+	xml, err := eng.RenderRSS(data)
+	if err != nil {
+		t.Fatalf("RenderRSS(): %v", err)
+	}
+	out := string(xml)
+
+	// No CDATA blocks should exist
+	assertNotContains(t, out, "<![CDATA[")
+
+	// XML special chars should be escaped
+	assertContains(t, out, "&lt;p&gt;Hello &amp; welcome&lt;/p&gt;")
+	assertContains(t, out, "&lt;span&gt;]]&gt;CDATA&lt;/span&gt;")
+	assertContains(t, out, "&lt;tags&gt;")
+	assertContains(t, out, "tag &amp; stuff")
+	assertContains(t, out, "another&lt;one")
+
+	// ]]> should be escaped (not terminate a CDATA block, since there is none)
+	assertContains(t, out, "]]&gt;")
+
+	// Output should be valid XML (basic check: no bare < in content)
+	// The ]]> sequence should appear as ]]&gt; in the output
+	if strings.Contains(out, "<![CDATA[") {
+		t.Error("CDATA blocks should be removed")
+	}
+}
+
+func TestRenderAtom_XMLEscaping(t *testing.T) {
+	eng := mustNewEngine(t)
+	now := time.Now()
+	data := FeedData{
+		Site: SiteConfig{
+			Title:   "Atom & \"Feed\" <Title>",
+			Slogan:  "Subtitle & more",
+			URL:     "https://example.com/",
+			Authors: []string{"Author & Co"},
+		},
+		FeedURL: "https://example.com/atom.xml",
+		Items: []FeedItem{
+			{
+				Title:         "Post with ]]> and <html>",
+				URL:           "https://example.com/post",
+				PublishedDate: now,
+				ModifiedDate:  now,
+				Keywords:      []string{"tag & stuff"},
+				Excerpt:       "Excerpt with <b>bold</b> & \"quotes\"",
+				FullContent:   htmplt.HTML(`<div>Hello &amp; world</div>`),
+				SiteTitle:     "Site",
+				Options:       FeedOptions{WithDescription: true, WithContent: true},
+			},
+		},
+		LastBuild: now,
+	}
+	xml, err := eng.RenderAtom(data)
+	if err != nil {
+		t.Fatalf("RenderAtom(): %v", err)
+	}
+	out := string(xml)
+
+	// No CDATA blocks
+	assertNotContains(t, out, "<![CDATA[")
+
+	// HTML content should be XML-escaped (not raw)
+	// &amp; in HTML source becomes &amp;amp; after XML escaping (correct: preserves the entity)
+	assertContains(t, out, "&lt;div&gt;Hello &amp;amp; world&lt;/div&gt;")
+	assertContains(t, out, "&lt;b&gt;bold&lt;/b&gt;")
+
+	// ]]> should be properly escaped
+	assertContains(t, out, "]]&gt;")
+}
+
+func TestXmlEscape_NoDoubleEscaping(t *testing.T) {
+	// xmlEscape should escape raw content once.
+	// text/template does NOT re-escape plain string return values,
+	// so there should be no double-escaping.
+	tests := []struct {
+		name     string
+		input    string
+		want     string
+		notWant  string // must NOT appear (would indicate double-escaping)
+	}{
+		{
+			name:    "ampersand",
+			input:   "A & B",
+			want:    "&amp;",
+			notWant: "&amp;amp;",
+		},
+		{
+			name:    "less-than",
+			input:   "a < b",
+			want:    "&lt;",
+			notWant: "&amp;lt;",
+		},
+		{
+			name:    "greater-than",
+			input:   "a > b",
+			want:    "&gt;",
+			notWant: "&amp;gt;",
+		},
+		{
+			name:  "cdata-killer",
+			input: "hello ]]>&gt; world",
+			want:  "]]&gt;",
+		},
+		{
+			name:  "raw-html",
+			input: "<p>&lt;escaped&gt;</p>",
+			want:  "&lt;p&gt;&amp;lt;escaped&amp;gt;&lt;/p&gt;",
+			notWant: "&amp;lt;p&gt;",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := xmlEscape(tc.input)
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("xmlEscape(%q) = %q, want contains %q", tc.input, got, tc.want)
+			}
+			if tc.notWant != "" && strings.Contains(got, tc.notWant) {
+				t.Errorf("xmlEscape(%q) = %q, contains %q (double-escaped?)", tc.input, got, tc.notWant)
+			}
+		})
+	}
+}
+
 func assertContains(t *testing.T, s, substr string) {
 	if !strings.Contains(s, substr) {
 		t.Errorf("expected output to contain %q", substr)

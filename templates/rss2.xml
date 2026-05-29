@@ -8,16 +8,16 @@
      xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <language>en</language>
-    <title>{{.Site.Title}}</title>
-    <description>{{.Site.Slogan}}</description>
+    <title>{{xmlEscape .Site.Title}}</title>
+    <description>{{xmlEscape .Site.Slogan}}</description>
     <link>{{urlJoin .Site.URL ""}}</link>
     <atom:link rel="self" type="application/rss+xml" href="{{.FeedURL}}"/>
     <ttl>60</ttl>
 {{- range .Site.Authors}}
-    <dc:creator><![CDATA[{{.}}]]></dc:creator>
+    <dc:creator>{{xmlEscape .}}</dc:creator>
 {{- end}}
 {{- if .Site.Copyright}}
-    <copyright>{{.Site.Copyright}}</copyright>
+    <copyright>{{xmlEscape .Site.Copyright}}</copyright>
 {{- end}}
 {{- if or .Site.LogoHref .Site.IconHref}}
     <image>
@@ -29,19 +29,19 @@
     <generator>Iris - https://github.com/tim-janik/iris/</generator>
 {{- range .Items}}
     <item>
-      <title>{{.Title}}</title>
-      <link>{{.URL}}</link>
-      <guid isPermaLink="true">{{.URL}}</guid>
+      <title>{{xmlEscape .Title}}</title>
+      <link>{{xmlEscape .URL}}</link>
+      <guid isPermaLink="true">{{xmlEscape .URL}}</guid>
       <pubDate>{{formatDate .PublishedDate "rfc822z"}}</pubDate>
-      <source url="{{$.FeedURL}}">{{.SiteTitle}}</source>
+      <source url="{{$.FeedURL}}">{{xmlEscape .SiteTitle}}</source>
 {{- range .Keywords}}
-      <category><![CDATA[{{.}}]]></category>
+      <category>{{xmlEscape .}}</category>
 {{- end}}
 {{- if or .Options.WithDescription (not .Options.WithContent)}}
-      <description>{{.Excerpt}}</description>
+      <description>{{xmlEscape .Excerpt}}</description>
 {{- end}}
 {{- if .Options.WithContent}}
-      <content:encoded><![CDATA[{{.FullContent}}]]></content:encoded>
+      <content:encoded>{{xmlEscape .FullContent}}</content:encoded>
 {{- end}}
     </item>
 {{- end}}

@@ -20,6 +20,7 @@ import (
 	"embed"
 	"fmt"
 	htmplt "html/template"
+	"html"
 	"log"
 	"os"
 	"path/filepath"
@@ -194,9 +195,10 @@ func New(templateDir string) (*Engine, error) {
 	// Shared functions for both html and text templates.
 	sharedFuncs := htmplt.FuncMap{
 		"formatDate":  formatDate,
+		"xmlEscape":   xmlEscape,
 		"joinStrings": strings.Join,
 		"hasBodyClass": hasBodyClass,
-		"sliceFirstN": func(s []string, n int) []string {
+		"sliceFirstN": func(s []string, n int) []string{
 			if len(s) <= n {
 				return s
 			}
@@ -392,6 +394,24 @@ func executeLayout(tmpl *htmplt.Template, data TemplateData) ([]byte, error) {
 // ---------------------------------------------------------------------------
 // Custom template functions
 // ---------------------------------------------------------------------------
+
+// xmlEscape escapes XML special characters in the input.
+// Accepts string, []byte, or any fmt.Stringer (e.g. htmplt.HTML).
+// Returns html.EscapeString output — safe for direct insertion into XML.
+// text/template does not re-escape plain string return values,
+// so there is no risk of double-escaping.
+func xmlEscape(v any) string {
+	switch s := v.(type) {
+	case string:
+		return html.EscapeString(s)
+	case []byte:
+		return html.EscapeString(string(s))
+	case fmt.Stringer:
+		return html.EscapeString(s.String())
+	default:
+		return html.EscapeString(fmt.Sprint(v))
+	}
+}
 
 // formatDate formats a time.Time value using one of several named formats.
 // Mirrors the Python datetime_format() from old/aux/util.py.

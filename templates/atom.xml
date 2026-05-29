@@ -5,16 +5,16 @@
 
 {{- define "atom"}}<?xml version="1.0" encoding="UTF-8"?>
 <feed xml:lang="en" xmlns="http://www.w3.org/2005/Atom">
-  <title type="text">{{.Site.Title}}</title>
-  <subtitle type="text">{{.Site.Slogan}}</subtitle>
+  <title type="text">{{xmlEscape .Site.Title}}</title>
+  <subtitle type="text">{{xmlEscape .Site.Slogan}}</subtitle>
   <id>{{.FeedURL}}</id>
   <link rel="self" type="application/atom+xml" href="{{.FeedURL}}"/>
   <link rel="alternate" type="text/html" href="{{.Site.URL}}"/>
 {{- range .Site.Authors}}
-  <author><name>{{.}}</name></author>
+  <author><name>{{xmlEscape .}}</name></author>
 {{- end}}
 {{- if .Site.Copyright}}
-  <rights>{{.Site.Copyright}}</rights>
+  <rights>{{xmlEscape .Site.Copyright}}</rights>
 {{- end}}
 {{- if .Site.IconHref}}
   <icon>{{urlJoin .Site.URL .Site.IconHref}}</icon>
@@ -25,19 +25,19 @@
   <generator uri="https://github.com/tim-janik/iris/">Iris</generator>
 {{- range .Items}}
   <entry>
-    <id>{{.URL}}</id>
-    <title>{{.Title}}</title>
+    <id>{{xmlEscape .URL}}</id>
+    <title>{{xmlEscape .Title}}</title>
     <updated>{{formatDate .ModifiedDate "iso8601"}}</updated>
     <published>{{formatDate .PublishedDate "iso8601"}}</published>
-    <link rel="alternate" href="{{.LinkHref}}"/>
+    <link rel="alternate" href="{{xmlEscape .LinkHref}}"/>
 {{- range .Keywords}}
-    <category term="{{.}}"/>
+    <category term="{{xmlEscape .}}"/>
 {{- end}}
 {{- if or .Options.WithDescription (not .Options.WithContent)}}
-    <summary>{{.Excerpt}}</summary>
+    <summary>{{xmlEscape .Excerpt}}</summary>
 {{- end}}
 {{- if .Options.WithContent}}
-    <content type="html" xml:base="{{.URL}}">{{.FullContent}}</content>
+    <content type="html" xml:base="{{xmlEscape .URL}}">{{xmlEscape .FullContent}}</content>
 {{- end}}
   </entry>
 {{- end}}
