@@ -218,6 +218,121 @@ func sampleFeedData() FeedData {
 	}
 }
 
+func TestRenderRSS_URLAndAttributeEscaping(t *testing.T) {
+	eng := mustNewEngine(t)
+	now := time.Now()
+	data := FeedData{
+		Site: SiteConfig{
+			Title:    "Test Site",
+			Slogan:   "A tagline",
+			URL:      "https://example.com/",
+			Authors:  []string{"Author"},
+			LogoHref: "/logo.png",
+		},
+		FeedURL: "https://example.com/feed?type=rss&v=1",
+		Items: []FeedItem{
+			{
+				Title:         "Post",
+				URL:           "https://example.com/post?id=1&cat=2",
+				PublishedDate: now,
+				ModifiedDate:  now,
+				SiteTitle:     "Test Site",
+				Options:       FeedOptions{WithDescription: true},
+				Excerpt:       "An excerpt.",
+			},
+		},
+		LastBuild: now,
+	}
+	xml, err := eng.RenderRSS(data)
+	if err != nil {
+		t.Fatalf("RenderRSS(): %v", err)
+	}
+	out := string(xml)
+
+	// Channel-level URLs should be escaped
+	assertContains(t, out, `href="https://example.com/feed?type=rss&amp;v=1"`)
+	assertContains(t, out, "<link>https://example.com/</link>")
+
+	// Image block should be escaped
+	assertContains(t, out, "<url>https://example.com/logo.png</url>")
+
+	// Item link and guid should be escaped
+	assertContains(t, out, "<link>https://example.com/post?id=1&amp;cat=2</link>")
+	assertContains(t, out, `<guid isPermaLink="true">https://example.com/post?id=1&amp;cat=2</guid>`)
+
+	// source url attribute should be escaped
+	assertContains(t, out, `url="https://example.com/feed?type=rss&amp;v=1"`)
+}
+
+func TestRenderAtom_URLAndAttributeEscaping(t *testing.T) {
+	eng := mustNewEngine(t)
+	now := time.Now()
+	data := FeedData{
+		Site: SiteConfig{
+			Title:     "Test Site",
+			Slogan:    "A tagline",
+			URL:       "https://example.com/",
+			Authors:   []string{"Author"},
+			IconHref:  "/favicon.ico",
+			LogoHref:  "/logo.png",
+		},
+		FeedURL: "https://example.com/feed?type=atom&v=1",
+		Items: []FeedItem{
+			{
+				Title:         "Post",
+				URL:           "https://example.com/post?id=1&cat=2",
+				LinkHref:      "post?id=1&cat=2",
+				PublishedDate: now,
+				ModifiedDate:  now,
+				SiteTitle:     "Test Site",
+				Options:       FeedOptions{WithDescription: true},
+				Excerpt:       "An excerpt.",
+			},
+		},
+		LastBuild: now,
+	}
+	xml, err := eng.RenderAtom(data)
+	if err != nil {
+		t.Fatalf("RenderAtom(): %v", err)
+	}
+	out := string(xml)
+
+	// Feed-level URLs should be escaped
+	assertContains(t, out, `<id>https://example.com/feed?type=atom&amp;v=1</id>`)
+	assertContains(t, out, `href="https://example.com/feed?type=atom&amp;v=1"`)
+	assertContains(t, out, `href="https://example.com/"`)
+
+	// Icon and logo should be escaped
+	assertContains(t, out, "<icon>https://example.com/favicon.ico</icon>")
+	assertContains(t, out, "<logo>https://example.com/logo.png</logo>")
+
+	// Entry id and link should be escaped
+	assertContains(t, out, `<id>https://example.com/post?id=1&amp;cat=2</id>`)
+	assertContains(t, out, `href="post?id=1&amp;cat=2"`)
+}
+
+func TestRenderSitemap_XMLEscaping(t *testing.T) {
+	eng := mustNewEngine(t)
+	data := SitemapData{
+		Pages: []SitemapEntry{
+			{
+				Loc:        "https://example.com/page?foo=1&bar=2",
+				Priority:   "0.9",
+				Changefreq: "weekly",
+				LastMod:    "2024-01-15",
+			},
+		},
+	}
+	xml, err := eng.RenderSitemap(data)
+	if err != nil {
+		t.Fatalf("RenderSitemap(): %v", err)
+	}
+	out := string(xml)
+
+	// URL with & should have &amp; in the output
+	assertContains(t, out, `<loc>https://example.com/page?foo=1&amp;bar=2</loc>`)
+}
+
 func TestRenderRSS_XMLEscaping(t *testing.T) {
 	eng := mustNewEngine(t)
 	now := time.Now()

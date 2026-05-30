@@ -15,8 +15,8 @@
     <language>en</language>
     <title>{{xmlEscape .Site.Title}}</title>
     <description>{{xmlEscape .Site.Slogan}}</description>
-    <link>{{urlJoin .Site.URL ""}}</link>
-    <atom:link rel="self" type="application/rss+xml" href="{{.FeedURL}}"/>
+    <link>{{xmlEscape (urlJoin .Site.URL "")}}</link>
+    <atom:link rel="self" type="application/rss+xml" href="{{xmlEscape .FeedURL}}"/>
     <ttl>60</ttl>
 {{- range .Site.Authors}}
     <dc:creator>{{xmlEscape .}}</dc:creator>
@@ -26,9 +26,9 @@
 {{- end}}
 {{- if or .Site.LogoHref .Site.IconHref}}
     <image>
-      <title>{{.Site.Title}}</title>
-      <url>{{urlJoin .Site.URL (or .Site.LogoHref .Site.IconHref)}}</url>
-      <link>{{urlJoin .Site.URL ""}}</link>
+      <title>{{xmlEscape .Site.Title}}</title>
+      <url>{{xmlEscape (urlJoin .Site.URL (or .Site.LogoHref .Site.IconHref))}}</url>
+      <link>{{xmlEscape (urlJoin .Site.URL "")}}</link>
     </image>
 {{- end}}
     <generator>Iris - https://github.com/tim-janik/iris/</generator>
@@ -38,7 +38,7 @@
       <link>{{xmlEscape .URL}}</link>
       <guid isPermaLink="true">{{xmlEscape .URL}}</guid>
       <pubDate>{{formatDate .PublishedDate "rfc822z"}}</pubDate>
-      <source url="{{$.FeedURL}}">{{xmlEscape .SiteTitle}}</source>
+      <source url="{{xmlEscape $.FeedURL}}">{{xmlEscape .SiteTitle}}</source>
 {{- range .Keywords}}
       <category>{{xmlEscape .}}</category>
 {{- end}}

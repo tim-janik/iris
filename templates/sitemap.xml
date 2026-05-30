@@ -8,8 +8,8 @@
   <!-- Generator: Iris (https://github.com/tim-janik/iris/) -->
 {{- range .Pages}}
   <url>
-    <priority>{{.Priority}}</priority><loc>{{.Loc}}</loc>
-    <changefreq>{{.Changefreq}}</changefreq><lastmod>{{.LastMod}}</lastmod>
+    <priority>{{xmlEscape .Priority}}</priority><loc>{{xmlEscape .Loc}}</loc>
+    <changefreq>{{xmlEscape .Changefreq}}</changefreq><lastmod>{{xmlEscape .LastMod}}</lastmod>
   </url>
 {{- end}}
 </urlset>
