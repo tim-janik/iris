@@ -9,6 +9,16 @@ test: ## Run all tests
 	go test ./...
 .PHONY: test
 
+# == vet ==
+vet: ## Run go vet
+	go vet ./...
+.PHONY: vet
+
+# == bench ==
+bench: ## Run all benchmarks
+	go test -bench=. ./...
+.PHONY: bench
+
 # == build ==
 build: ## Build all packages
 	go build .
