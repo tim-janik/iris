@@ -1,6 +1,9 @@
 {{/*
   atom.xml - Atom feed template.
   Uses text/template to preserve XML whitespace/indentation.
+  HTML content in <content type="html"> is XML-escaped via xmlEscape.
+  Per RFC 4287 §3.1.1.2: "Any markup within MUST be escaped; for
+  example, <br> as &lt;br>." — https://www.rfc-editor.org/rfc/rfc4287#section-3.1.1.2
 */}}
 
 {{- define "atom"}}<?xml version="1.0" encoding="UTF-8"?>
