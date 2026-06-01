@@ -718,13 +718,19 @@ func indexMain() {
 			title = extractH1Title(body)
 		}
 		if title == "" {
-			title = filepath.Base(filePath)
+			title = filepath.Base(strings.TrimSuffix(filePath, filepath.Ext(filePath)))
+		}
+
+		// Strip .md/.adoc extension for clean URLs (matches iris serve)
+		link := filePath
+		if ext := filepath.Ext(filePath); ext == ".md" || ext == ".adoc" {
+			link = strings.TrimSuffix(filePath, ext)
 		}
 
 		if fm.Description != "" {
-			fmt.Printf("- [%s](%s) — %s\n", title, filePath, fm.Description)
+			fmt.Printf("- [%s](%s) — %s\n", title, link, fm.Description)
 		} else {
-			fmt.Printf("- [%s](%s)\n", title, filePath)
+			fmt.Printf("- [%s](%s)\n", title, link)
 		}
 	}
 }
