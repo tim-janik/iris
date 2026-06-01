@@ -669,6 +669,67 @@ func writeConfigTOML(w io.Writer, cfg SiteConfig) error {
 }
 
 // ---------------------------------------------------------------------------
+// Index subcommand — generate index.md lines from a list of .md files
+// ---------------------------------------------------------------------------
+
+// extractH1Title returns the first top-level heading (# ...) from markdown text.
+func extractH1Title(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "# ") && !strings.HasPrefix(trimmed, "## ") {
+			return strings.TrimPrefix(trimmed, "# ")
+		}
+	}
+	return ""
+}
+
+// indexArgs holds the parsed index command arguments.
+type indexArgs struct {
+	files []string
+}
+
+// parseIndexArgs parses command-line arguments for the index subcommand.
+func parseIndexArgs() indexArgs {
+	fs := flag.NewFlagSet("index", flag.ExitOnError)
+	fs.Parse(os.Args[2:])
+
+	args := fs.Args()
+	if len(args) == 0 {
+		fmt.Fprintf(os.Stderr, "Usage: %s index <file.md> [file2.md ...]\n", os.Args[0])
+		os.Exit(1)
+	}
+	return indexArgs{files: args}
+}
+
+// indexMain reads each .md file, extracts title and description from frontmatter
+// (falling back to the first h1 for title), and prints index.md lines to stdout.
+func indexMain() {
+	args := parseIndexArgs()
+	for _, filePath := range args.files {
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "read %s: %v\n", filePath, err)
+			continue
+		}
+		fm, body := parseFrontmatter(data)
+
+		title := fm.Title
+		if title == "" {
+			title = extractH1Title(body)
+		}
+		if title == "" {
+			title = filepath.Base(filePath)
+		}
+
+		if fm.Description != "" {
+			fmt.Printf("- [%s](%s) — %s\n", title, filePath, fm.Description)
+		} else {
+			fmt.Printf("- [%s](%s)\n", title, filePath)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -827,6 +888,8 @@ func main() {
 	switch os.Args[1] {
 	case "init":
 		initConfig(parseInitArgs())
+	case "index":
+		indexMain()
 	case "ssg":
 		ssgMain()
 	case "serve":
@@ -846,6 +909,7 @@ func printUsage() {
 
 Subcommands:
   init      Create _siteconfig.toml with default settings
+  index     Generate index.md lines from a list of .md files
   ssg       Build the site (convert, render, generate feeds/sitemap)
   serve     Start an HTTP server that renders .md files to HTML on-the-fly
   version   Print version and build information
@@ -853,6 +917,8 @@ Subcommands:
 Run "iris <subcommand> -h" for more information on a subcommand.
 
 Examples:
+  iris index page1.md page2.md
+	Print markdown link lines suitable for index.md
   iris serve ./docs --port 9454
 	Serves all .md files under ./docs as rendered HTML on localhost:9454
 `)
