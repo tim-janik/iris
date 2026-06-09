@@ -75,8 +75,9 @@ func parseServeFrontmatter(content []byte) (*serveFrontmatter, string) {
 
 // extractBodyAndTitle parses a full HTML document and returns the body's inner
 // HTML (including any <h1>) and the page title.
-// Title resolution mirrors pandoc.extractTitle: <h1> takes priority over <title>
-// so pandoc's default <title>-</title> placeholder is naturally skipped.
+// Title resolution mirrors pandoc.extractTitle: <h1> takes priority over <title>.
+// Pandoc emits <title>-</title> as a placeholder when no metadata title is set;
+// treat that as empty so the caller can fall back to the filename.
 func extractBodyAndTitle(htmlStr string) (string, string) {
 	doc, err := htmlutil.Parse(htmlStr)
 	if err != nil {
@@ -92,6 +93,9 @@ func extractBodyAndTitle(htmlStr string) (string, string) {
 		title = htmlutil.Text(h1)
 	} else if t := htmlutil.FindByTag(doc, "title"); t != nil {
 		title = htmlutil.Text(t)
+	}
+	if title == "-" {
+		title = ""
 	}
 	return strings.TrimSpace(htmlutil.InnerHTML(body)), title
 }
@@ -194,22 +198,11 @@ func (s *Server) Serve() error {
 		// Parse frontmatter for title
 		fm, _ := parseServeFrontmatter(data)
 
-		// Compute filename stem as fallback title.
-		// When frontmatter has no title, pass this to the converter so it generates
-		// a proper <title> instead of pandoc's default "-" placeholder.
-		stem := strings.TrimSuffix(filepath.Base(absPath), filepath.Ext(absPath))
-		stem = strings.ReplaceAll(stem, "_", " ")
-		stem = strings.ReplaceAll(stem, "-", " ")
-
 		// Convert via pandoc or asciidoctor, extract full body (including <h1>)
 		var bodyContent string
 		var convertedTitle string
 		if strings.HasSuffix(absPath, ".adoc") {
-			convCfg := s.AdocConfig
-			if fm.Title == "" {
-				convCfg.Attributes = append(convCfg.Attributes, "doctitle="+stem)
-			}
-			htmlStr, convErr := adoc.Convert(convCfg, data)
+			htmlStr, convErr := adoc.Convert(s.AdocConfig, data)
 			if convErr != nil {
 				log.Printf("[500] %s -> %s: %v", urlPath, absPath, convErr)
 				http.Error(w, fmt.Sprintf("Internal Server Error: %v", convErr), http.StatusInternalServerError)
@@ -217,11 +210,7 @@ func (s *Server) Serve() error {
 			}
 			bodyContent, convertedTitle = extractBodyAndTitle(htmlStr)
 		} else {
-			convCfg := cfg
-			if fm.Title == "" {
-				convCfg.ExtraArgs = append(convCfg.ExtraArgs, "--metadata", "title="+stem)
-			}
-			htmlStr, convErr := pandoc.Convert(convCfg, data, "")
+			htmlStr, convErr := pandoc.Convert(cfg, data, "")
 			if convErr != nil {
 				log.Printf("[500] %s -> %s: %v", urlPath, absPath, convErr)
 				http.Error(w, fmt.Sprintf("Internal Server Error: %v", convErr), http.StatusInternalServerError)
@@ -230,13 +219,13 @@ func (s *Server) Serve() error {
 			bodyContent, convertedTitle = extractBodyAndTitle(htmlStr)
 		}
 
-		// Resolve title: frontmatter > converter-extracted title (h1/title) > filename stem
+		// Resolve title: frontmatter > h1 from converter > filename (with extension)
 		title := fm.Title
 		if title == "" {
 			title = convertedTitle
 		}
 		if title == "" {
-			title = stem
+			title = filepath.Base(absPath)
 		}
 
 		// Render through serve.html template
