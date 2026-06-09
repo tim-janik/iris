@@ -44,6 +44,8 @@ type Server struct {
 	EditLinkCmd string
 	// TemplateDir is a custom template directory (overrides embedded templates).
 	TemplateDir string
+	// FaviconPath is the path to a favicon file served at /favicon.ico.
+	FaviconPath string
 	// Site holds site-level configuration (title, slogan, stylesheet, etc.).
 	Site templates.SiteConfig
 }
@@ -125,6 +127,20 @@ func (s *Server) Serve() error {
 	cfg := s.PandocConfig
 
 	mux := http.NewServeMux()
+
+	// Serve favicon if configured (exact path takes priority over catch-all "/").
+	if s.FaviconPath != "" {
+		mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet && r.Method != http.MethodHead {
+				http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			log.Printf("[200] /favicon.ico -> %s", s.FaviconPath)
+			w.Header().Set("Content-Type", "image/x-icon")
+			http.ServeFile(w, r, s.FaviconPath)
+		})
+	}
+
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)

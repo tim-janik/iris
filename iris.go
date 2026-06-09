@@ -795,6 +795,7 @@ type serveArgs struct {
 	port        int    // TCP port to listen on
 	editLinkCmd string // command template for edit links (empty = disabled)
 	templateDir string // custom template directory (overrides embedded templates)
+	faviconPath string // path to favicon file served at /favicon.ico
 }
 
 // parseServeArgs parses command-line arguments for the serve subcommand.
@@ -803,6 +804,7 @@ func parseServeArgs() serveArgs {
 	port := fs.Int("port", 9454, "TCP port to listen on (default: 9454)")
 	editLinkCmd := fs.String("editlink", "", "command template to open source file in editor (empty = disabled); use %s for file path, %u for line number")
 	templateDir := fs.String("t", "", "custom template directory (overrides embedded templates)")
+	faviconPath := fs.String("favicon", "", "path to favicon file served at /favicon.ico")
 	fs.Parse(os.Args[2:])
 
 	args := fs.Args()
@@ -812,7 +814,7 @@ func parseServeArgs() serveArgs {
 	}
 
 	root, _ := filepath.Abs(args[0])
-	return serveArgs{root: root, port: *port, editLinkCmd: *editLinkCmd, templateDir: *templateDir}
+	return serveArgs{root: root, port: *port, editLinkCmd: *editLinkCmd, templateDir: *templateDir, faviconPath: *faviconPath}
 }
 
 // serveMain is the main entry point for the serve subcommand.
@@ -837,6 +839,7 @@ func serveMain() {
 		AdocConfig:   adoc.DefaultConfig(),
 		EditLinkCmd:  args.editLinkCmd,
 		TemplateDir:  args.templateDir,
+		FaviconPath:  args.faviconPath,
 		Site:         toTemplateSite(site),
 	}
 
