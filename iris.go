@@ -496,6 +496,7 @@ type SiteConfig struct {
 	AssetGlob     []string `toml:"asset_glob"     comment:"Glob patterns for static assets (copied verbatim, no sitemap entry)"`
 	ExcludeGlob   []string `toml:"exclude_glob"   comment:"Glob patterns for files to skip (default: skip _-prefixed files)"`
 	Stylesheet    string   `toml:"stylesheet"     comment:"Custom stylesheet path (e.g. \"assets/site.css\"); empty = use converter defaults"`
+	TitlePrefix   string   `toml:"title_prefix"   comment:"Prefix prepended to page titles in <title> (e.g. \"📚 \")"`
 }
 
 func defaultSiteConfig() SiteConfig {
@@ -514,6 +515,7 @@ func defaultSiteConfig() SiteConfig {
 		IncludeGlob: []string{},
 		AssetGlob:   []string{},
 		ExcludeGlob: []string{"_*"}, // default: skip config/template prefixes
+		TitlePrefix: "", // "📜 ",
 	}
 }
 
@@ -821,8 +823,12 @@ func serveMain() {
 		log.Fatalf("root path does not exist: %s", args.root)
 	}
 
-	// Load site config from root dir; falls back to defaults if config missing.
-	site := loadSiteConfig(args.root, "")
+	// Auto-detect config file in root directory; falls back to defaults if missing.
+	configFile := ""
+	if _, err := os.Stat(filepath.Join(args.root, defaultConfigPath)); err == nil {
+		configFile = filepath.Join(args.root, defaultConfigPath)
+	}
+	site := loadSiteConfig(args.root, configFile)
 
 	srv := &serve.Server{
 		Root:         args.root,
@@ -882,6 +888,7 @@ func toTemplateSite(site SiteConfig) templates.SiteConfig {
 		IconHref:    site.IconHref,
 		LogoHref:    site.LogoHref,
 		Stylesheet:  site.Stylesheet,
+		TitlePrefix: site.TitlePrefix,
 	}
 }
 

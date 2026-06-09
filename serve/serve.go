@@ -75,6 +75,8 @@ func parseServeFrontmatter(content []byte) (*serveFrontmatter, string) {
 
 // extractBodyAndTitle parses a full HTML document and returns the body's inner
 // HTML (including any <h1>) and the page title (from <title> or first <h1>).
+// Pandoc emits <title>-</title> as a placeholder when no metadata title is set;
+// treat that as empty and fall back to the first <h1>.
 func extractBodyAndTitle(htmlStr string) (string, string) {
 	doc, err := htmlutil.Parse(htmlStr)
 	if err != nil {
@@ -85,7 +87,7 @@ func extractBodyAndTitle(htmlStr string) (string, string) {
 	if body == nil {
 		return htmlStr, title
 	}
-	if title == "" {
+	if title == "" || title == "-" {
 		if h1 := htmlutil.FindByTag(body, "h1"); h1 != nil {
 			title = htmlutil.Text(h1)
 		}
@@ -212,10 +214,16 @@ func (s *Server) Serve() error {
 			bodyContent, convertedTitle = extractBodyAndTitle(htmlStr)
 		}
 
-		// Resolve title: frontmatter > converter-extracted title
+		// Resolve title: frontmatter > converter-extracted title (h1/title) > filename stem
 		title := fm.Title
 		if title == "" {
 			title = convertedTitle
+		}
+		if title == "" {
+			// Fallback: strip extension, replace separators with spaces, title-case
+			stem := strings.TrimSuffix(filepath.Base(absPath), filepath.Ext(absPath))
+			title = strings.ReplaceAll(stem, "_", " ")
+			title = strings.ReplaceAll(title, "-", " ")
 		}
 
 		// Render through serve.html template
