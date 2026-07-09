@@ -149,6 +149,22 @@ func (s *Server) Serve() error {
 
 		urlPath := normalizePath(r.URL.Path)
 
+		// Redirect .md/.adoc URLs to clean URLs (e.g. /foo.md → /foo)
+		// unless ?noredirect is set to request the raw source.
+		if ext := filepath.Ext(urlPath); ext == ".md" || ext == ".adoc" {
+			if !r.URL.Query().Has("noredirect") {
+				if _, err := os.Stat(filepath.Join(s.Root, urlPath)); err == nil {
+					target := strings.TrimSuffix(urlPath, ext)
+					if target == "" {
+						target = "/"
+					}
+					log.Printf("[302] %s -> %s", urlPath, target)
+					http.Redirect(w, r, target, http.StatusFound)
+					return
+				}
+			}
+		}
+
 		// Try the path as-is first, then append .md, then .adoc.
 		// convertToHTML is true only when we found the file by appending an extension
 		// (i.e. the user requested /foo/bar and we resolved it to /foo/bar.md).
