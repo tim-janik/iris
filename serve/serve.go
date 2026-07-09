@@ -186,7 +186,11 @@ func (s *Server) Serve() error {
 				return
 			}
 			log.Printf("[200] %s -> %s (passthrough)", urlPath, absPath)
-			w.Header().Set("Content-Type", mimetype.Lookup(ext))
+			mimeType := mimetype.Lookup(ext)
+			if strings.HasPrefix(mimeType, "text/") {
+				mimeType += "; charset=utf-8"
+			}
+			w.Header().Set("Content-Type", mimeType)
 			f, err := os.Open(absPath)
 			if err != nil {
 				log.Printf("[500] %s: open error: %v", absPath, err)
