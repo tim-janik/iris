@@ -1380,10 +1380,10 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 	})
 
 	// Use newest page's published date for reproducible builds
-	lastBuild := feedItems[0].PublishedDate
-	if len(feedItems) == 0 {
-		lastBuild = time.Time{} // zero time when no posts
-	}
+	var lastBuild time.Time
+	if len(feedItems) > 0 {
+		lastBuild = feedItems[0].PublishedDate
+	} // zero time when no posts
 
 	// Helper to track successfully written feed files for sitemap
 	feedLastBuild := lastBuild
@@ -1478,7 +1478,7 @@ func computePathInfoForDir(dir string) (dirName string, depth int, root string) 
 		return dirName, 0, "."
 	}
 	depth = strings.Count(dir, "/") + 1
-	return dirName, depth, strings.Repeat("..", depth)
+	return dirName, depth, strings.TrimRight(strings.Repeat("../", depth), "/")
 }
 
 // cleanURL strips the .html extension for clean URLs.
