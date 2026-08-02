@@ -240,16 +240,67 @@
     return name.trim() !== "" && !/^\./.test(name) && !/[\\\/]/.test(name);
   }
 
-  function buildContents(fields, body) {
-    var lines = [];
-    for (var key in fields) {
-      if (Object.prototype.hasOwnProperty.call(fields, key)) {
-        var value = String(fields[key]).trim();
-        if (value) lines.push(key + ": " + value);
-      }
+  // Splits a leading frontmatter block (--- ... --- or ... ) from the rest
+  // of a document. Returns null when the text has no complete frontmatter
+  // block, matching the shared parser's behavior for incomplete blocks.
+  function splitFrontmatter(text) {
+    var lines = String(text || "").split("\n");
+    if (!lines.length) return null;
+    var first = lines[0];
+    if (first.charCodeAt(0) === 0xFEFF) first = first.slice(1);
+    if (first.trim() !== "---") return null;
+    var end = -1;
+    for (var i = 1; i < lines.length; i++) {
+      var trimmed = lines[i].trim();
+      if (trimmed === "---" || trimmed === "...") { end = i; break; }
     }
-    if (!lines.length) return body;
-    return "---\n" + lines.join("\n") + "\n---\n\n" + body;
+    if (end < 0) return null;
+    return { fm: lines.slice(1, end), terminator: lines[end], rest: lines.slice(end + 1) };
+  }
+
+  // Top-level keys of a frontmatter block: simple "key: value" lines at
+  // column 0, lower-cased. Indented lines (nested maps, list items) and
+  // lines without a colon are ignored.
+  function frontmatterKeys(fmLines) {
+    var keys = {};
+    fmLines.forEach(function (line) {
+      var match = /^([A-Za-z_][A-Za-z0-9_-]*)\s*:/.exec(line);
+      if (match) keys[match[1].toLowerCase()] = true;
+    });
+    return keys;
+  }
+
+  // Builds the file contents from form fields and the markdown body. When the
+  // body already starts with a complete frontmatter block, the form fields are
+  // merged into it: fields whose key already exists (compared case-
+  // insensitively) are left untouched so user-typed frontmatter takes
+  // precedence, all other form fields are appended before the terminator, and
+  // the rest of the document is preserved verbatim. Without frontmatter, a
+  // block is built from the fields as before.
+  function buildContents(fields, body) {
+    var extraLines = [];
+    for (var key in fields) {
+      if (!Object.prototype.hasOwnProperty.call(fields, key)) continue;
+      var value = String(fields[key]).trim();
+      if (value) extraLines.push(key + ": " + value);
+    }
+    var parsed = splitFrontmatter(body);
+    if (parsed) {
+      var taken = frontmatterKeys(parsed.fm);
+      var added = extraLines.filter(function (line) {
+        var key = line.slice(0, line.indexOf(":")).toLowerCase();
+        return !taken[key];
+      });
+      var fmParts = [];
+      if (parsed.fm.length) fmParts.push(parsed.fm.join("\n"));
+      if (added.length) fmParts.push(added.join("\n"));
+      var joined = fmParts.join("\n");
+      var rebuilt = "---\n" + (joined ? joined + "\n" : "") + parsed.terminator;
+      var rest = parsed.rest.join("\n");
+      return rest ? rebuilt + "\n" + rest : rebuilt;
+    }
+    if (!extraLines.length) return String(body || "");
+    return "---\n" + extraLines.join("\n") + "\n---\n\n" + body;
   }
 
   // Collects non-empty frontmatter fields from a form. Every form control
@@ -360,6 +411,7 @@
     stripMdSuffix: stripMdSuffix,
     validFileName: validFileName,
     buildContents: buildContents,
+    splitFrontmatter: splitFrontmatter,
     formFields: formFields,
     defaultDeadline: defaultDeadline
   };

@@ -75,6 +75,35 @@ test("formFields collects non-empty frontmatter fields in order", () => {
   assert.deepEqual(JSON.parse(JSON.stringify(dashboard.formFields(form))), { area: "garten", owner: "tim" });
 });
 
+test("buildContents merges form fields into user frontmatter, user wins on duplicates", () => {
+  const merged = dashboard.buildContents(
+    { area: "project", status: "open", priority: "medium", owner: "tim" },
+    "---\nstatus: done\nArea: garten\nkeywords:\n  - one\n  - two\n---\n\n# Title\n\nBody\n");
+  // status (user) and Area (user, case-insensitive match) win; only
+  // priority and owner are appended (area is a case-insensitive duplicate)
+  assert.equal(merged,
+    "---\nstatus: done\nArea: garten\nkeywords:\n  - one\n  - two\npriority: medium\nowner: tim\n---\n\n# Title\n\nBody\n");
+});
+
+test("buildContents preserves the ... terminator and untouched documents", () => {
+  // duplicate-only merge: nothing appended, document unchanged
+  assert.equal(dashboard.buildContents({ owner: "tim" }, "---\nowner: nassim\n...\n\nBody"),
+    "---\nowner: nassim\n...\n\nBody");
+  // non-duplicate merge keeps the ... terminator
+  assert.equal(dashboard.buildContents({ owner: "tim", area: "project" }, "---\nowner: nassim\n...\n\nBody"),
+    "---\nowner: nassim\narea: project\n...\n\nBody");
+  // no form fields: user frontmatter untouched
+  assert.equal(dashboard.buildContents({}, "---\nstatus: open\n---\n\nBody"),
+    "---\nstatus: open\n---\n\nBody");
+});
+
+test("buildContents treats incomplete frontmatter as body text", () => {
+  const body = "---\nstatus: open\n\nno terminator here";
+  assert.equal(dashboard.buildContents({ area: "x" }, body),
+    "---\narea: x\n---\n\n" + body);
+  assert.equal(dashboard.splitFrontmatter(body), null);
+});
+
 test("defaultDeadline returns a valid YYYY-MM-DD date string", () => {
   const deadline = dashboard.defaultDeadline();
   assert.match(deadline, /^\d{4}-\d{2}-\d{2}$/);
