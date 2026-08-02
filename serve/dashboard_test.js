@@ -6,8 +6,38 @@ const vm = require("node:vm");
 const test = require("node:test");
 
 const context = { globalThis: {}, console };
+// Minimal fake DOM so card()/statusIndicator()/safeLink() are testable.
+function fakeElement(tag) {
+  return {
+    tagName: tag,
+    className: "",
+    textContent: undefined,
+    href: undefined,
+    childNodes: [],
+    setAttribute() {},
+    appendChild(child) { this.childNodes.push(child); return child; },
+    replaceChildren(...children) { this.childNodes = children; }
+  };
+}
+context.document = {
+  createElement: fakeElement,
+  getElementById: () => null,
+  querySelectorAll: () => [],
+  readyState: "complete",
+  head: fakeElement("head"),
+  addEventListener() {}
+};
 vm.runInNewContext(fs.readFileSync(__dirname + "/dashboard.js", "utf8"), context);
 const dashboard = context.globalThis.IrisDashboard;
+
+function cardSpans(card) {
+  const spans = [];
+  (function walk(node) {
+    if (node.textContent !== undefined) spans.push({ cls: node.className, text: node.textContent, href: node.href });
+    (node.childNodes || []).forEach(walk);
+  })(card);
+  return spans;
+}
 
 test("filters exact values, arrays, AND clauses, and contains globs", () => {
   const entry = { status: "open", area: "vegetable garden", keywords: ["repair", "outside"] };
@@ -104,10 +134,45 @@ test("buildContents treats incomplete frontmatter as body text", () => {
   assert.equal(dashboard.splitFrontmatter(body), null);
 });
 
-test("defaultDeadline returns a valid YYYY-MM-DD date string", () => {
-  const deadline = dashboard.defaultDeadline();
-  assert.match(deadline, /^\d{4}-\d{2}-\d{2}$/);
-  const parsed = new Date(deadline + "T00:00:00");
+test("card renders value-only metadata with date aliasing and estimate", () => {
+  const entry = dashboard.withDefaults({
+    title: "Fix fence", description: "Board broke", url: "/issues/fix-fence",
+    deadline: "2026-02-01", estimate: "1 day"
+  });
+  const spans = cardSpans(dashboard.card(entry));
+  const chips = spans.filter((s) => s.cls.startsWith("dashboard-field")).map((s) => s.text);
+  // capitalized, no field-name prefix; deadline shown via due alias; estimate shown
+  assert.deepEqual(chips, ["Open", "Medium", "2026-02-01", "1 day"]);
+  assert.ok(!spans.some((s) => /^(status|priority|due|estimate):/.test(s.text)));
+  // linked title and status glyph
+  assert.equal(spans.find((s) => s.cls === "dashboard-title").href, "/issues/fix-fence");
+  assert.ok(spans.some((s) => s.cls.split(/\s+/).includes("dashboard-status--open") && s.text === "○"));
+});
+
+test("date aliasing: due wins over deadline, date, and target", () => {
+  const base = { title: "x", url: "/x" };
+  const chipOf = (entry) => {
+    const spans = cardSpans(dashboard.card(entry));
+    const due = spans.find((s) => s.cls === "dashboard-field dashboard-field--due");
+    return due ? due.text : null;
+  };
+  assert.equal(chipOf({ ...base, due: "2026-01-01", deadline: "2026-02-01" }), "2026-01-01");
+  assert.equal(chipOf({ ...base, deadline: "2026-02-01" }), "2026-02-01");
+  assert.equal(chipOf({ ...base, date: "2026-03-01" }), "2026-03-01");
+  assert.equal(chipOf({ ...base, target: "2026-04-01" }), "2026-04-01");
+  assert.equal(chipOf(base), null);
+});
+
+test("card omits estimate when absent and keeps explicit values", () => {
+  const spans = cardSpans(dashboard.card({ title: "t", url: "/t", status: "done", priority: "low" }));
+  const chips = spans.filter((s) => s.cls.startsWith("dashboard-field")).map((s) => s.text);
+  assert.deepEqual(chips, ["Done", "Low"]);
+});
+
+test("defaultDue returns a valid YYYY-MM-DD date string", () => {
+  const due = dashboard.defaultDue();
+  assert.match(due, /^\d{4}-\d{2}-\d{2}$/);
+  const parsed = new Date(due + "T00:00:00");
   assert.ok(!Number.isNaN(parsed.getTime()));
 });
 

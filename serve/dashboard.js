@@ -176,6 +176,20 @@
     return indicator;
   }
 
+  function capitalized(value) {
+    return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+  }
+
+  // First non-empty value among the given field aliases, in display order
+  // (due before deadline before date before target, matching sort precedence).
+  function firstValue(entry, fields) {
+    for (var i = 0; i < fields.length; i++) {
+      var value = textValue(entry, fields[i]).trim();
+      if (value) return value;
+    }
+    return "";
+  }
+
   function card(entry) {
     var article = node("article", undefined, "dashboard-card");
     var line = node("div", undefined, "dashboard-card-line");
@@ -187,10 +201,18 @@
     var description = textValue(entry, "description").trim();
     if (description) article.appendChild(node("p", description, "dashboard-description"));
 
+    // Value-only metadata chips: status and priority are self-explanatory
+    // without a field prefix, the due date accepts any date alias, and
+    // estimate is shown when present.
     var metadata = node("div", undefined, "dashboard-metadata");
-    ["status", "priority", "deadline"].forEach(function (field) {
-      var value = textValue(entry, field).trim();
-      if (value) metadata.appendChild(node("span", field + ": " + value, "dashboard-field dashboard-field--" + field));
+    var fields = [
+      { value: capitalized(textValue(entry, "status").trim()), field: "status" },
+      { value: capitalized(textValue(entry, "priority").trim()), field: "priority" },
+      { value: capitalized(firstValue(entry, DATE_FIELDS)), field: "due" },
+      { value: capitalized(textValue(entry, "estimate").trim()), field: "estimate" }
+    ];
+    fields.forEach(function (item) {
+      if (item.value) metadata.appendChild(node("span", item.value, "dashboard-field dashboard-field--" + item.field));
     });
     if (metadata.childNodes.length) article.appendChild(metadata);
     return article;
@@ -324,8 +346,8 @@
   }
 
   // Tomorrow's date (local time) as YYYY-MM-DD, used for the "now+1day"
-  // default deadline. <input type="date"> requires a concrete date value.
-  function defaultDeadline() {
+  // default due date. <input type="date"> requires a concrete date value.
+  function defaultDue() {
     var now = new Date();
     now.setDate(now.getDate() + 1);
     var month = String(now.getMonth() + 1);
@@ -338,7 +360,7 @@
   function applyFormDefaults(form) {
     Array.prototype.slice.call(form.querySelectorAll("[data-default]")).forEach(function (el) {
       if (el.value) return;
-      if (el.getAttribute("data-default") === "now+1day") el.value = defaultDeadline();
+      if (el.getAttribute("data-default") === "now+1day") el.value = defaultDue();
     });
   }
 
@@ -413,7 +435,10 @@
     buildContents: buildContents,
     splitFrontmatter: splitFrontmatter,
     formFields: formFields,
-    defaultDeadline: defaultDeadline
+    defaultDue: defaultDue,
+    card: card,
+    capitalized: capitalized,
+    firstValue: firstValue
   };
   if (global) global.IrisDashboard = api;
 
