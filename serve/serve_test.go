@@ -128,7 +128,7 @@ func TestCreateFileSuccess(t *testing.T) {
 
 func TestCreateFileRejectsBadNames(t *testing.T) {
 	root := t.TempDir()
-	for _, name := range []string{".hidden.md", "sub/evil.md", `sub\evil.md`, "..", "../up.md", ""} {
+	for _, name := range []string{".hidden.md", "sub/evil.md", `sub\evil.md`, "..", "../up.md", "notes.txt", "README", ""} {
 		req := httptest.NewRequest(http.MethodPost, "/..~meta~?cmd=create-file&name="+name, strings.NewReader("x"))
 		rec := httptest.NewRecorder()
 		handleMetadataRoute(rec, req, root)

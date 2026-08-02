@@ -270,6 +270,10 @@ func serveCreateFile(w http.ResponseWriter, r *http.Request, root, urlPath strin
 		http.Error(w, "create-file: invalid characters in file name", http.StatusBadRequest)
 		return
 	}
+	if !strings.HasSuffix(name, ".md") {
+		http.Error(w, "create-file: file name must end with .md", http.StatusBadRequest)
+		return
+	}
 	dir, err := resolveMetadataDir(root, urlPath)
 	if err != nil {
 		if os.IsNotExist(err) {
