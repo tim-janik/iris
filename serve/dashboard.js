@@ -68,6 +68,22 @@
     return 0;
   }
 
+  // Priority order for sorting: high first, then medium, then low. Unknown
+  // priorities sort with the default (medium), matching how withDefaults()
+  // treats missing priorities and how statusRank() treats unknown statuses.
+  function priorityRank(entry) {
+    var priority = textValue(entry, "priority").trim().toLowerCase();
+    if (priority === "max") return 1;
+    if (priority === "xhigh") return 2;
+    if (priority === "high") return 3;
+    if (priority === "medium") return 4;
+    // unknown : 5
+    if (priority === "low") return 7;
+    if (priority === "xlow") return 8;
+    if (priority === "min") return 9;
+    return 5;
+  }
+
   function parseDate(value) {
     var match;
     if ((match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value))) {
@@ -111,6 +127,9 @@
   function compareEntries(left, right) {
     var statusResult = statusRank(left) - statusRank(right);
     if (statusResult) return statusResult;
+
+    var priorityResult = priorityRank(left) - priorityRank(right);
+    if (priorityResult) return priorityResult;
 
     var a = candidate(left);
     var b = candidate(right);
@@ -226,16 +245,18 @@
     if (description) article.appendChild(node("p", description, "dashboard-description"));
 
     // Value-only metadata chips: status and priority are self-explanatory
-    // without a field prefix, estimate appears before the due date, the due
-    // chip accepts any date alias and is colored by urgency (overdue red,
-    // within 3 days yellow), and estimate is prefixed with "ca " at display
-    // time (guarded so already-prefixed values like "ca 3h" are not doubled).
+    // without a field prefix, area is the record's category, estimate appears
+    // before the due date, the due chip accepts any date alias and is colored
+    // by urgency (overdue red, within 3 days yellow), and estimate is
+    // prefixed with "ca " at display time (guarded so already-prefixed values
+    // like "ca 3h" are not doubled).
     var metadata = node("div", undefined, "dashboard-metadata");
     var fields = [
-      { value: capitalized(textValue(entry, "status").trim()), field: "status" },
-      { value: capitalized(textValue(entry, "priority").trim()), field: "priority" },
-      { value: estimateValue(entry), field: "estimate" },
-      { value: capitalized(firstValue(entry, DATE_FIELDS)), field: "due", extra: dueStatus(entry) }
+	{ value: capitalized(firstValue(entry, DATE_FIELDS)), field: "due", extra: dueStatus(entry) },
+	{ value: capitalized(textValue(entry, "priority").trim()), field: "priority" },
+	{ value: capitalized(textValue(entry, "area").trim()), field: "area" },
+	{ value: capitalized(textValue(entry, "status").trim()), field: "status" },
+	{ value: estimateValue(entry), field: "estimate" },
     ];
     fields.forEach(function (item) {
       if (!item.value) return;
@@ -250,7 +271,7 @@
   function renderCards(widget, entries, omitted) {
     var list = node("div", undefined, "dashboard-cards");
     entries.forEach(function (entry) { list.appendChild(card(entry)); });
-    if (omitted > 0) list.appendChild(node("p", "+" + omitted + " others", "dashboard-others"));
+    if (omitted > 0) list.appendChild(node("p", "+ " + omitted + " others", "dashboard-others"));
     widget.replaceChildren(list);
   }
 
@@ -274,7 +295,7 @@
     if (document.getElementById("iris-dashboard-style")) return;
     var style = document.createElement("style");
     style.id = "iris-dashboard-style";
-    style.textContent = ".dashboard-card-line{display:flex;gap:.45em;align-items:baseline}.dashboard-status{font-size:1.1em;color:#777}.dashboard-status--open{color:#668}.dashboard-status--in-progress,.dashboard-status--in_progress{color:#a76}.dashboard-status--done,.dashboard-status--complete{color:#686}.dashboard-metadata{display:flex;align-items:baseline;color:#777;font-size:.9em}.dashboard-field::after{content:\"\\00b7\";margin:0 .5em}.dashboard-field:last-child::after{content:\"\";margin:0}.dashboard-field--due-soon{color:#a57400}.dashboard-field--due-overdue{color:#b33}.dashboard-others{color:#777;font-style:italic}" + ".dashboard-new fieldset{border:1px solid #ccc;border-radius:6px;margin:1em 0;padding:.75em 1em}.dashboard-new legend{font-weight:bold}.dashboard-new .dashboard-new-name{display:flex;align-items:baseline;gap:.4em}.dashboard-new .dashboard-new-suffix{color:#999}.dashboard-new .dashboard-new-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13em,1fr));gap:.6em 1.2em;margin:1em 0}.dashboard-new label{display:flex;flex-direction:column;gap:.15em;font-size:.9em;color:#555}.dashboard-new input[type=text],.dashboard-new input[type=date],.dashboard-new select,.dashboard-new textarea{padding:.3em .4em;border:1px solid #ccc;border-radius:4px;font:inherit;color:#222}.dashboard-new textarea{width:100%;box-sizing:border-box}.dashboard-new button{margin-top:.6em;padding:.4em 1.1em}.dashboard-new .dashboard-new-status{color:#777;font-size:.9em;margin-left:.6em}.dashboard-new .dashboard-new-status.dashboard-error{color:#a33}.dashboard-new .dashboard-new-reload{background:#fff;color:#555;border:1px solid #aaa}.dashboard-new .dashboard-new-reload:hover{background:#f2f2f2}";
+    style.textContent = ".dashboard-card-line{display:flex;gap:.45em;align-items:baseline}.dashboard-status{font-size:1.1em;color:#777}.dashboard-status--open{color:#668}.dashboard-status--in-progress,.dashboard-status--in_progress{color:#a76}.dashboard-status--done,.dashboard-status--complete{color:#686}.dashboard-metadata{display:flex;align-items:baseline;color:#777;font-size:.9em}.dashboard-field::after{content:\"\\00b7\";margin:0 .5em}.dashboard-field:last-child::after{content:\"\";margin:0}.dashboard-field--due-soon{color:#a57400}.dashboard-field--due-overdue{color:#b33}.dashboard-description{margin:.2em 0 0}.dashboard-others{margin:0;color:#777;font-style:italic}" + ".dashboard-new fieldset{border:1px solid #ccc;border-radius:6px;margin:1em 0;padding:.75em 1em}.dashboard-new legend{font-weight:bold}.dashboard-new .dashboard-new-name{display:flex;align-items:baseline;gap:.4em}.dashboard-new .dashboard-new-suffix{color:#999}.dashboard-new .dashboard-new-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13em,1fr));gap:.6em 1.2em;margin:1em 0}.dashboard-new label{display:flex;flex-direction:column;gap:.15em;font-size:.9em;color:#555}.dashboard-new input[type=text],.dashboard-new input[type=date],.dashboard-new select,.dashboard-new textarea{padding:.3em .4em;border:1px solid #ccc;border-radius:4px;font:inherit;color:#222}.dashboard-new textarea{width:100%;box-sizing:border-box}.dashboard-new button{margin-top:.6em;padding:.4em 1.1em}.dashboard-new .dashboard-new-status{color:#777;font-size:.9em;margin-left:.6em}.dashboard-new .dashboard-new-status.dashboard-error{color:#a33}.dashboard-new .dashboard-new-reload{background:#fff;color:#555;border:1px solid #aaa}.dashboard-new .dashboard-new-reload:hover{background:#f2f2f2}";
     document.head.appendChild(style);
   }
 
