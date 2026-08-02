@@ -49,6 +49,32 @@ test("defaulted status sorts as active (before complete/done)", () => {
   assert.deepEqual(sorted.map((entry) => entry.title), ["unclassified", "complete", "done"]);
 });
 
+test("create-file helpers build names, frontmatter, and contents", () => {
+  assert.equal(dashboard.stripMdSuffix("fix-fence.md"), "fix-fence");
+  assert.equal(dashboard.stripMdSuffix("fix-fence.MD"), "fix-fence");
+  assert.equal(dashboard.validFileName("fix-fence"), true);
+  assert.equal(dashboard.validFileName("fix fence"), true);
+  assert.equal(dashboard.validFileName(".hidden"), false);
+  assert.equal(dashboard.validFileName("a/b"), false);
+  assert.equal(dashboard.validFileName("a\\b"), false);
+  assert.equal(dashboard.validFileName(""), false);
+  assert.equal(dashboard.buildContents({ area: "garten", status: "open" }, "Body"),
+    "---\narea: garten\nstatus: open\n---\n\nBody");
+  assert.equal(dashboard.buildContents({ area: "  " }, "Body"), "Body");
+  assert.equal(dashboard.buildContents({}, "Body"), "Body");
+});
+
+test("formFields collects non-empty frontmatter fields in order", () => {
+  const form = { elements: [
+    { getAttribute: () => "name", value: "x" },
+    { getAttribute: () => "area", value: "garten" },
+    { getAttribute: () => "status", value: " " },
+    { getAttribute: () => "owner", value: "tim" },
+    { getAttribute: () => "contents", value: "body" }
+  ] };
+  assert.deepEqual(JSON.parse(JSON.stringify(dashboard.formFields(form))), { area: "garten", owner: "tim" });
+});
+
 test("uses number/string fallbacks and reports omitted records", () => {
   const result = dashboard.limitedEntries([
     { title: "ten", due: "10" },
