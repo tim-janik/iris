@@ -190,6 +190,30 @@
     return "";
   }
 
+  // Estimate display value: the raw value prefixed with "ca " when present.
+  // Values that already carry the prefix (e.g. "ca 3h") are left alone.
+  function estimateValue(entry) {
+    var value = textValue(entry, "estimate").trim();
+    if (!value) return "";
+    return /^ca\b/i.test(value) ? value : "ca " + value;
+  }
+
+  // Best-effort due-date urgency for the due chip. The displayed date value
+  // (any alias) is parsed with parseDate; invalid values are data, not errors.
+  // Records that are done or complete are never flagged. "overdue" (date at
+  // or before now) renders red-ish, "soon" (within the next 3 days)
+  // yellow-ish, anything else renders normally.
+  function dueStatus(entry) {
+    var status = textValue(entry, "status").trim().toLowerCase();
+    if (status === "done" || status === "complete") return "";
+    var date = parseDate(firstValue(entry, DATE_FIELDS));
+    if (date === null) return "";
+    var now = Date.now();
+    if (date <= now) return "overdue";
+    if (date <= now + 3 * 24 * 60 * 60 * 1000) return "soon";
+    return "";
+  }
+
   function card(entry) {
     var article = node("article", undefined, "dashboard-card");
     var line = node("div", undefined, "dashboard-card-line");
@@ -202,17 +226,22 @@
     if (description) article.appendChild(node("p", description, "dashboard-description"));
 
     // Value-only metadata chips: status and priority are self-explanatory
-    // without a field prefix, the due date accepts any date alias, and
-    // estimate is shown when present.
+    // without a field prefix, estimate appears before the due date, the due
+    // chip accepts any date alias and is colored by urgency (overdue red,
+    // within 3 days yellow), and estimate is prefixed with "ca " at display
+    // time (guarded so already-prefixed values like "ca 3h" are not doubled).
     var metadata = node("div", undefined, "dashboard-metadata");
     var fields = [
       { value: capitalized(textValue(entry, "status").trim()), field: "status" },
       { value: capitalized(textValue(entry, "priority").trim()), field: "priority" },
-      { value: capitalized(firstValue(entry, DATE_FIELDS)), field: "due" },
-      { value: capitalized(textValue(entry, "estimate").trim()), field: "estimate" }
+      { value: estimateValue(entry), field: "estimate" },
+      { value: capitalized(firstValue(entry, DATE_FIELDS)), field: "due", extra: dueStatus(entry) }
     ];
     fields.forEach(function (item) {
-      if (item.value) metadata.appendChild(node("span", item.value, "dashboard-field dashboard-field--" + item.field));
+      if (!item.value) return;
+      var className = "dashboard-field dashboard-field--" + item.field;
+      if (item.extra) className += " dashboard-field--" + item.field + "-" + item.extra;
+      metadata.appendChild(node("span", item.value, className));
     });
     if (metadata.childNodes.length) article.appendChild(metadata);
     return article;
@@ -245,7 +274,7 @@
     if (document.getElementById("iris-dashboard-style")) return;
     var style = document.createElement("style");
     style.id = "iris-dashboard-style";
-    style.textContent = ".dashboard-card-line{display:flex;gap:.45em;align-items:baseline}.dashboard-status{font-size:1.1em;color:#777}.dashboard-status--open{color:#668}.dashboard-status--in-progress,.dashboard-status--in_progress{color:#a76}.dashboard-status--done,.dashboard-status--complete{color:#686}.dashboard-metadata{display:flex;gap:.75em;color:#777;font-size:.9em}.dashboard-others{color:#777;font-style:italic}" + ".dashboard-new fieldset{border:1px solid #ccc;border-radius:6px;margin:1em 0;padding:.75em 1em}.dashboard-new legend{font-weight:bold}.dashboard-new .dashboard-new-name{display:flex;align-items:baseline;gap:.4em}.dashboard-new .dashboard-new-suffix{color:#999}.dashboard-new .dashboard-new-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13em,1fr));gap:.6em 1.2em;margin:1em 0}.dashboard-new label{display:flex;flex-direction:column;gap:.15em;font-size:.9em;color:#555}.dashboard-new input[type=text],.dashboard-new input[type=date],.dashboard-new select,.dashboard-new textarea{padding:.3em .4em;border:1px solid #ccc;border-radius:4px;font:inherit;color:#222}.dashboard-new textarea{width:100%;box-sizing:border-box}.dashboard-new button{margin-top:.6em;padding:.4em 1.1em}.dashboard-new .dashboard-new-status{color:#777;font-size:.9em;margin-left:.6em}.dashboard-new .dashboard-new-status.dashboard-error{color:#a33}";
+    style.textContent = ".dashboard-card-line{display:flex;gap:.45em;align-items:baseline}.dashboard-status{font-size:1.1em;color:#777}.dashboard-status--open{color:#668}.dashboard-status--in-progress,.dashboard-status--in_progress{color:#a76}.dashboard-status--done,.dashboard-status--complete{color:#686}.dashboard-metadata{display:flex;align-items:baseline;color:#777;font-size:.9em}.dashboard-field::after{content:\"\\00b7\";margin:0 .5em}.dashboard-field:last-child::after{content:\"\";margin:0}.dashboard-field--due-soon{color:#a57400}.dashboard-field--due-overdue{color:#b33}.dashboard-others{color:#777;font-style:italic}" + ".dashboard-new fieldset{border:1px solid #ccc;border-radius:6px;margin:1em 0;padding:.75em 1em}.dashboard-new legend{font-weight:bold}.dashboard-new .dashboard-new-name{display:flex;align-items:baseline;gap:.4em}.dashboard-new .dashboard-new-suffix{color:#999}.dashboard-new .dashboard-new-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13em,1fr));gap:.6em 1.2em;margin:1em 0}.dashboard-new label{display:flex;flex-direction:column;gap:.15em;font-size:.9em;color:#555}.dashboard-new input[type=text],.dashboard-new input[type=date],.dashboard-new select,.dashboard-new textarea{padding:.3em .4em;border:1px solid #ccc;border-radius:4px;font:inherit;color:#222}.dashboard-new textarea{width:100%;box-sizing:border-box}.dashboard-new button{margin-top:.6em;padding:.4em 1.1em}.dashboard-new .dashboard-new-status{color:#777;font-size:.9em;margin-left:.6em}.dashboard-new .dashboard-new-status.dashboard-error{color:#a33}";
     document.head.appendChild(style);
   }
 
@@ -438,7 +467,9 @@
     defaultDue: defaultDue,
     card: card,
     capitalized: capitalized,
-    firstValue: firstValue
+    firstValue: firstValue,
+    estimateValue: estimateValue,
+    dueStatus: dueStatus
   };
   if (global) global.IrisDashboard = api;
 
