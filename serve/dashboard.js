@@ -3,6 +3,11 @@
   "use strict";
 
   var DATE_FIELDS = ["due", "deadline", "date", "target"];
+  // Presentation defaults: records without a status count as "open", records
+  // without a priority count as "medium". Applied before filtering, sorting,
+  // and rendering, so filters like status:open match unclassified records.
+  var DEFAULT_STATUS = "open";
+  var DEFAULT_PRIORITY = "medium";
   var STATUS_SYMBOLS = {
     "open": "○",
     "in-progress": "◐",
@@ -21,6 +26,13 @@
 
   function textValue(entry, field) {
     return values(entry, field).join(", ");
+  }
+
+  function withDefaults(entry) {
+    var normalized = Object.assign({}, entry);
+    if (!textValue(normalized, "status").trim()) normalized.status = DEFAULT_STATUS;
+    if (!textValue(normalized, "priority").trim()) normalized.priority = DEFAULT_PRIORITY;
+    return normalized;
   }
 
   function globMatch(actual, wanted) {
@@ -123,7 +135,7 @@
   }
 
   function filteredAndSorted(entries, expression) {
-    return entries.filter(function (entry) { return matches(entry, expression); }).sort(compareEntries);
+    return entries.map(withDefaults).filter(function (entry) { return matches(entry, expression); }).sort(compareEntries);
   }
 
   function limitedEntries(entries, expression, limit) {
@@ -245,7 +257,8 @@
     compareEntries: compareEntries,
     filteredAndSorted: filteredAndSorted,
     limitedEntries: limitedEntries,
-    parseDate: parseDate
+    parseDate: parseDate,
+    withDefaults: withDefaults
   };
   if (global) global.IrisDashboard = api;
 
