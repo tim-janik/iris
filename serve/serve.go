@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	htmplt "html/template"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -242,22 +243,101 @@ func serveMetadata(w http.ResponseWriter, r *http.Request, root, urlPath string)
 	}
 }
 
+// serveCreateFile handles cmd=create-file: it creates a new file in the
+// directory named by urlPath, using the file name from the "name" query
+// parameter and the request body as the file contents. The name must be a
+// plain file name (no dot prefix, no path separators); the file must not
+// already exist. Every failure is reported with a descriptive error response.
+func serveCreateFile(w http.ResponseWriter, r *http.Request, root, urlPath string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed: create-file requires POST", http.StatusMethodNotAllowed)
+		return
+	}
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, "create-file: missing 'name' query parameter", http.StatusBadRequest)
+		return
+	}
+	if strings.HasPrefix(name, ".") {
+		http.Error(w, "create-file: file name must not start with a dot", http.StatusBadRequest)
+		return
+	}
+	if strings.ContainsAny(name, `/\`) {
+		http.Error(w, "create-file: file name must not contain slashes", http.StatusBadRequest)
+		return
+	}
+	if strings.ContainsRune(name, 0) {
+		http.Error(w, "create-file: invalid characters in file name", http.StatusBadRequest)
+		return
+	}
+	dir, err := resolveMetadataDir(root, urlPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "Not Found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Bad metadata path", http.StatusBadRequest)
+		}
+		return
+	}
+	contents, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("create-file: could not read request body: %v", err), http.StatusBadRequest)
+		return
+	}
+	target := filepath.Join(dir, name)
+	// O_EXCL makes existence check and creation atomic: an existing file is never overwritten.
+	f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		switch {
+		case os.IsExist(err):
+			http.Error(w, fmt.Sprintf("create-file: %q already exists", name), http.StatusConflict)
+		case os.IsPermission(err):
+			http.Error(w, fmt.Sprintf("create-file: permission denied for %q", name), http.StatusForbidden)
+		default:
+			http.Error(w, fmt.Sprintf("create-file: could not create %q: %v", name, err), http.StatusInternalServerError)
+		}
+		return
+	}
+	if _, err := f.Write(contents); err != nil {
+		_ = f.Close()
+		_ = os.Remove(target)
+		http.Error(w, fmt.Sprintf("create-file: could not write %q: %v", name, err), http.StatusInternalServerError)
+		return
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(target)
+		http.Error(w, fmt.Sprintf("create-file: could not close %q: %v", name, err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]string{"created": name})
+}
+
 func handleMetadataRoute(w http.ResponseWriter, r *http.Request, root string) bool {
 	if !metadataRoute(r.URL.Path) {
 		return false
 	}
 	writeNoCache(w)
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return true
-	}
 	query := r.URL.Query()
 	if query.Get("asset") != "" {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return true
+		}
 		if query.Get("asset") != "dashboard.js" {
 			http.Error(w, "Unknown asset", http.StatusNotFound)
 			return true
 		}
 		serveDashboardAsset(w, r)
+		return true
+	}
+	if query.Get("cmd") == "create-file" {
+		serveCreateFile(w, r, root, r.URL.Path)
+		return true
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return true
 	}
 	if query.Get("cmd") != "get-frontmatter-array" {

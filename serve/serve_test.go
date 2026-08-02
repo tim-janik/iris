@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -88,6 +89,104 @@ func TestMetadataRouteEmptyAndTraversal(t *testing.T) {
 		if rec.Code != http.StatusOK || !reflect.DeepEqual(rec.Body.Bytes(), []byte("[]\n")) {
 			t.Errorf("empty response = %d %q", rec.Code, rec.Body.String())
 		}
+	}
+}
+
+func TestCreateFileSuccess(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "tasks"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\nstatus: open\npriority: high\n---\nNew issue body\n"
+	req := httptest.NewRequest(http.MethodPost, "/tasks/..~meta~?cmd=create-file&name=new-issue.md", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleMetadataRoute(rec, req, root)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Fatalf("content type = %q", got)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("cache control = %q", got)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "tasks", "new-issue.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != body {
+		t.Errorf("written contents = %q, want %q", data, body)
+	}
+	// the new file must be visible to get-frontmatter-array immediately
+	req = httptest.NewRequest(http.MethodGet, "/tasks/..~meta~?cmd=get-frontmatter-array", nil)
+	rec = httptest.NewRecorder()
+	handleMetadataRoute(rec, req, root)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "\"url\":\"/tasks/new-issue\"") {
+		t.Errorf("metadata after create = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestCreateFileRejectsBadNames(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{".hidden.md", "sub/evil.md", `sub\evil.md`, "..", "../up.md", ""} {
+		req := httptest.NewRequest(http.MethodPost, "/..~meta~?cmd=create-file&name="+name, strings.NewReader("x"))
+		rec := httptest.NewRecorder()
+		handleMetadataRoute(rec, req, root)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("name %q: status = %d, body = %s", name, rec.Code, rec.Body)
+		}
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("directory not empty after rejected creates: %v", entries)
+	}
+}
+
+func TestCreateFileConflictsWithExistingFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "exists.md"), []byte("original"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/..~meta~?cmd=create-file&name=exists.md", strings.NewReader("overwrite attempt"))
+	rec := httptest.NewRecorder()
+	handleMetadataRoute(rec, req, root)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "exists.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "original" {
+		t.Errorf("existing file was modified: %q", data)
+	}
+}
+
+func TestCreateFileRequiresPostAndExistingDirectory(t *testing.T) {
+	root := t.TempDir()
+	// GET is not allowed for create-file
+	req := httptest.NewRequest(http.MethodGet, "/..~meta~?cmd=create-file&name=x.md", nil)
+	rec := httptest.NewRecorder()
+	handleMetadataRoute(rec, req, root)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET status = %d, body = %s", rec.Code, rec.Body)
+	}
+	// missing directory
+	req = httptest.NewRequest(http.MethodPost, "/nope/..~meta~?cmd=create-file&name=x.md", strings.NewReader("x"))
+	rec = httptest.NewRecorder()
+	handleMetadataRoute(rec, req, root)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("missing dir status = %d, body = %s", rec.Code, rec.Body)
+	}
+	// traversal is rejected before any write
+	req = httptest.NewRequest(http.MethodPost, "/../..~meta~?cmd=create-file&name=x.md", strings.NewReader("x"))
+	rec = httptest.NewRecorder()
+	handleMetadataRoute(rec, req, root)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("traversal status = %d, body = %s", rec.Code, rec.Body)
 	}
 }
 
