@@ -274,7 +274,7 @@
     if (document.getElementById("iris-dashboard-style")) return;
     var style = document.createElement("style");
     style.id = "iris-dashboard-style";
-    style.textContent = ".dashboard-card-line{display:flex;gap:.45em;align-items:baseline}.dashboard-status{font-size:1.1em;color:#777}.dashboard-status--open{color:#668}.dashboard-status--in-progress,.dashboard-status--in_progress{color:#a76}.dashboard-status--done,.dashboard-status--complete{color:#686}.dashboard-metadata{display:flex;align-items:baseline;color:#777;font-size:.9em}.dashboard-field::after{content:\"\\00b7\";margin:0 .5em}.dashboard-field:last-child::after{content:\"\";margin:0}.dashboard-field--due-soon{color:#a57400}.dashboard-field--due-overdue{color:#b33}.dashboard-others{color:#777;font-style:italic}" + ".dashboard-new fieldset{border:1px solid #ccc;border-radius:6px;margin:1em 0;padding:.75em 1em}.dashboard-new legend{font-weight:bold}.dashboard-new .dashboard-new-name{display:flex;align-items:baseline;gap:.4em}.dashboard-new .dashboard-new-suffix{color:#999}.dashboard-new .dashboard-new-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13em,1fr));gap:.6em 1.2em;margin:1em 0}.dashboard-new label{display:flex;flex-direction:column;gap:.15em;font-size:.9em;color:#555}.dashboard-new input[type=text],.dashboard-new input[type=date],.dashboard-new select,.dashboard-new textarea{padding:.3em .4em;border:1px solid #ccc;border-radius:4px;font:inherit;color:#222}.dashboard-new textarea{width:100%;box-sizing:border-box}.dashboard-new button{margin-top:.6em;padding:.4em 1.1em}.dashboard-new .dashboard-new-status{color:#777;font-size:.9em;margin-left:.6em}.dashboard-new .dashboard-new-status.dashboard-error{color:#a33}";
+    style.textContent = ".dashboard-card-line{display:flex;gap:.45em;align-items:baseline}.dashboard-status{font-size:1.1em;color:#777}.dashboard-status--open{color:#668}.dashboard-status--in-progress,.dashboard-status--in_progress{color:#a76}.dashboard-status--done,.dashboard-status--complete{color:#686}.dashboard-metadata{display:flex;align-items:baseline;color:#777;font-size:.9em}.dashboard-field::after{content:\"\\00b7\";margin:0 .5em}.dashboard-field:last-child::after{content:\"\";margin:0}.dashboard-field--due-soon{color:#a57400}.dashboard-field--due-overdue{color:#b33}.dashboard-others{color:#777;font-style:italic}" + ".dashboard-new fieldset{border:1px solid #ccc;border-radius:6px;margin:1em 0;padding:.75em 1em}.dashboard-new legend{font-weight:bold}.dashboard-new .dashboard-new-name{display:flex;align-items:baseline;gap:.4em}.dashboard-new .dashboard-new-suffix{color:#999}.dashboard-new .dashboard-new-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13em,1fr));gap:.6em 1.2em;margin:1em 0}.dashboard-new label{display:flex;flex-direction:column;gap:.15em;font-size:.9em;color:#555}.dashboard-new input[type=text],.dashboard-new input[type=date],.dashboard-new select,.dashboard-new textarea{padding:.3em .4em;border:1px solid #ccc;border-radius:4px;font:inherit;color:#222}.dashboard-new textarea{width:100%;box-sizing:border-box}.dashboard-new button{margin-top:.6em;padding:.4em 1.1em}.dashboard-new .dashboard-new-status{color:#777;font-size:.9em;margin-left:.6em}.dashboard-new .dashboard-new-status.dashboard-error{color:#a33}.dashboard-new .dashboard-new-reload{background:#fff;color:#555;border:1px solid #aaa}.dashboard-new .dashboard-new-reload:hover{background:#f2f2f2}";
     document.head.appendChild(style);
   }
 
@@ -393,10 +393,16 @@
     });
   }
 
+  // True when the submit was triggered by the "Create & Reload" button
+  // (class dashboard-new-reload) rather than the plain create button.
+  function reloadAfterCreate(submitter) {
+    return !!(submitter && submitter.classList && submitter.classList.contains("dashboard-new-reload"));
+  }
+
   function initCreateForm(form) {
     applyFormDefaults(form);
-    var button = form.querySelector('button[type="submit"]');
     var status = form.querySelector(".dashboard-new-status");
+    var buttons = Array.prototype.slice.call(form.querySelectorAll('button[type="submit"]'));
     form.addEventListener("submit", function (event) {
       event.preventDefault();
       var name = stripMdSuffix(String(form.elements["name"].value || "").trim());
@@ -404,8 +410,9 @@
         showFormStatus(status, "Invalid file name: no leading dot, no slashes.", true);
         return;
       }
+      var reload = reloadAfterCreate(event.submitter);
       var contents = buildContents(formFields(form), form.elements["contents"].value || "");
-      if (button) button.disabled = true;
+      buttons.forEach(function (button) { button.disabled = true; });
       showFormStatus(status, "Creating " + name + ".md \u2026");
       fetch("./..~meta~?cmd=create-file&name=" + encodeURIComponent(name + ".md"), {
         method: "POST",
@@ -413,7 +420,10 @@
         body: contents
       }).then(function (response) {
         if (response.ok) {
-          window.location.assign("./" + encodeURIComponent(name));
+          // Create & Reload stays on the dashboard so the next issue can be
+          // entered immediately; the plain button opens the new issue page.
+          if (reload) window.location.reload();
+          else window.location.assign("./" + encodeURIComponent(name));
           return;
         }
         return response.text().then(function (message) {
@@ -422,7 +432,7 @@
       }).catch(function (error) {
         showFormStatus(status, "Create failed: " + error.message, true);
       }).finally(function () {
-        if (button) button.disabled = false;
+        buttons.forEach(function (button) { button.disabled = false; });
       });
     });
   }
@@ -469,7 +479,8 @@
     capitalized: capitalized,
     firstValue: firstValue,
     estimateValue: estimateValue,
-    dueStatus: dueStatus
+    dueStatus: dueStatus,
+    reloadAfterCreate: reloadAfterCreate
   };
   if (global) global.IrisDashboard = api;
 

@@ -208,6 +208,13 @@ test("dueStatus colors overdue red and soon yellow, never for done/complete", ()
   assert.ok(dueSoon.cls.split(/\s+/).includes("dashboard-field--due-soon"));
 });
 
+test("reloadAfterCreate detects the Create & Reload button", () => {
+  assert.equal(dashboard.reloadAfterCreate({ classList: { contains: (c) => c === "dashboard-new-reload" } }), true);
+  assert.equal(dashboard.reloadAfterCreate({ classList: { contains: () => false } }), false);
+  assert.equal(dashboard.reloadAfterCreate(undefined), false);
+  assert.equal(dashboard.reloadAfterCreate(null), false);
+});
+
 test("defaultDue returns a valid YYYY-MM-DD date string", () => {
   const due = dashboard.defaultDue();
   assert.match(due, /^\d{4}-\d{2}-\d{2}$/);
