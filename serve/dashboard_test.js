@@ -75,6 +75,13 @@ test("formFields collects non-empty frontmatter fields in order", () => {
   assert.deepEqual(JSON.parse(JSON.stringify(dashboard.formFields(form))), { area: "garten", owner: "tim" });
 });
 
+test("defaultDeadline returns a valid YYYY-MM-DD date string", () => {
+  const deadline = dashboard.defaultDeadline();
+  assert.match(deadline, /^\d{4}-\d{2}-\d{2}$/);
+  const parsed = new Date(deadline + "T00:00:00");
+  assert.ok(!Number.isNaN(parsed.getTime()));
+});
+
 test("uses number/string fallbacks and reports omitted records", () => {
   const result = dashboard.limitedEntries([
     { title: "ten", due: "10" },

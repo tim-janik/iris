@@ -223,7 +223,7 @@
     if (document.getElementById("iris-dashboard-style")) return;
     var style = document.createElement("style");
     style.id = "iris-dashboard-style";
-    style.textContent = ".dashboard-card-line{display:flex;gap:.45em;align-items:baseline}.dashboard-status{font-size:1.1em;color:#777}.dashboard-status--open{color:#668}.dashboard-status--in-progress,.dashboard-status--in_progress{color:#a76}.dashboard-status--done,.dashboard-status--complete{color:#686}.dashboard-metadata{display:flex;gap:.75em;color:#777;font-size:.9em}.dashboard-others{color:#777;font-style:italic}" + ".dashboard-new fieldset{border:1px solid #ccc;border-radius:6px;margin:1em 0;padding:.75em 1em}.dashboard-new legend{font-weight:bold}.dashboard-new .dashboard-new-name{display:flex;align-items:baseline;gap:.4em}.dashboard-new .dashboard-new-suffix{color:#999}.dashboard-new .dashboard-new-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13em,1fr));gap:.6em 1.2em;margin:.6em 0}.dashboard-new label{display:flex;flex-direction:column;gap:.15em;font-size:.9em;color:#555}.dashboard-new input[type=text],.dashboard-new input[type=date],.dashboard-new select,.dashboard-new textarea{padding:.3em .4em;border:1px solid #ccc;border-radius:4px;font:inherit;color:#222}.dashboard-new textarea{width:100%;box-sizing:border-box}.dashboard-new button{margin-top:.6em;padding:.4em 1.1em}.dashboard-new .dashboard-new-status{color:#777;font-size:.9em;margin-left:.6em}.dashboard-new .dashboard-new-status.dashboard-error{color:#a33}";
+    style.textContent = ".dashboard-card-line{display:flex;gap:.45em;align-items:baseline}.dashboard-status{font-size:1.1em;color:#777}.dashboard-status--open{color:#668}.dashboard-status--in-progress,.dashboard-status--in_progress{color:#a76}.dashboard-status--done,.dashboard-status--complete{color:#686}.dashboard-metadata{display:flex;gap:.75em;color:#777;font-size:.9em}.dashboard-others{color:#777;font-style:italic}" + ".dashboard-new fieldset{border:1px solid #ccc;border-radius:6px;margin:1em 0;padding:.75em 1em}.dashboard-new legend{font-weight:bold}.dashboard-new .dashboard-new-name{display:flex;align-items:baseline;gap:.4em}.dashboard-new .dashboard-new-suffix{color:#999}.dashboard-new .dashboard-new-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13em,1fr));gap:.6em 1.2em;margin:1em 0}.dashboard-new label{display:flex;flex-direction:column;gap:.15em;font-size:.9em;color:#555}.dashboard-new input[type=text],.dashboard-new input[type=date],.dashboard-new select,.dashboard-new textarea{padding:.3em .4em;border:1px solid #ccc;border-radius:4px;font:inherit;color:#222}.dashboard-new textarea{width:100%;box-sizing:border-box}.dashboard-new button{margin-top:.6em;padding:.4em 1.1em}.dashboard-new .dashboard-new-status{color:#777;font-size:.9em;margin-left:.6em}.dashboard-new .dashboard-new-status.dashboard-error{color:#a33}";
     document.head.appendChild(style);
   }
 
@@ -272,7 +272,27 @@
     status.className = "dashboard-new-status" + (isError ? " dashboard-error" : "");
   }
 
+  // Tomorrow's date (local time) as YYYY-MM-DD, used for the "now+1day"
+  // default deadline. <input type="date"> requires a concrete date value.
+  function defaultDeadline() {
+    var now = new Date();
+    now.setDate(now.getDate() + 1);
+    var month = String(now.getMonth() + 1);
+    var day = String(now.getDate());
+    return now.getFullYear() + "-" + (month.length < 2 ? "0" + month : month) + "-" + (day.length < 2 ? "0" + day : day);
+  }
+
+  // Fills empty form controls that carry a data-default attribute, so freshly
+  // opened forms come pre-filled with sensible values.
+  function applyFormDefaults(form) {
+    Array.prototype.slice.call(form.querySelectorAll("[data-default]")).forEach(function (el) {
+      if (el.value) return;
+      if (el.getAttribute("data-default") === "now+1day") el.value = defaultDeadline();
+    });
+  }
+
   function initCreateForm(form) {
+    applyFormDefaults(form);
     var button = form.querySelector('button[type="submit"]');
     var status = form.querySelector(".dashboard-new-status");
     form.addEventListener("submit", function (event) {
@@ -340,7 +360,8 @@
     stripMdSuffix: stripMdSuffix,
     validFileName: validFileName,
     buildContents: buildContents,
-    formFields: formFields
+    formFields: formFields,
+    defaultDeadline: defaultDeadline
   };
   if (global) global.IrisDashboard = api;
 
