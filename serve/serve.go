@@ -5,6 +5,7 @@
 package serve
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	htmplt "html/template"
@@ -22,6 +23,12 @@ import (
 	"github.com/tim-janik/iris/pandoc"
 	"github.com/tim-janik/iris/templates"
 )
+
+// dashboardScript is served from the special metadata route; it is never
+// written into the user's source tree or the SSG output directory.
+//
+//go:embed dashboard.js
+var dashboardScript []byte
 
 // Server holds configuration for the markdown HTTP server.
 type Server struct {
@@ -149,6 +156,15 @@ func writeNoCache(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store")
 }
 
+func serveDashboardAsset(w http.ResponseWriter, r *http.Request) {
+	writeNoCache(w)
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	if r.Method == http.MethodHead {
+		return
+	}
+	_, _ = w.Write(dashboardScript)
+}
+
 func serveMetadata(w http.ResponseWriter, r *http.Request, root, urlPath string) {
 	writeNoCache(w)
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -236,6 +252,14 @@ func handleMetadataRoute(w http.ResponseWriter, r *http.Request, root string) bo
 		return true
 	}
 	query := r.URL.Query()
+	if query.Get("asset") != "" {
+		if query.Get("asset") != "dashboard.js" {
+			http.Error(w, "Unknown asset", http.StatusNotFound)
+			return true
+		}
+		serveDashboardAsset(w, r)
+		return true
+	}
 	if query.Get("cmd") != "get-frontmatter-array" {
 		if query.Get("cmd") == "" {
 			http.Error(w, "Missing metadata command", http.StatusBadRequest)

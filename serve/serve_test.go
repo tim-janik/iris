@@ -90,3 +90,15 @@ func TestMetadataRouteEmptyAndTraversal(t *testing.T) {
 		}
 	}
 }
+
+func TestDashboardAsset(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/tasks/..~meta~?asset=dashboard.js", nil)
+	rec := httptest.NewRecorder()
+	handleMetadataRoute(rec, req, t.TempDir())
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/javascript; charset=utf-8" {
+		t.Fatalf("asset response = %d %q", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	if len(rec.Body.Bytes()) == 0 {
+		t.Fatal("empty dashboard asset")
+	}
+}
