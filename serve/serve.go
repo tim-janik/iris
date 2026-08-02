@@ -6,20 +6,20 @@ package serve
 
 import (
 	"fmt"
+	htmplt "html/template"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	htmplt "html/template"
 
 	"github.com/tim-janik/iris/adoc"
 	"github.com/tim-janik/iris/editlink"
+	"github.com/tim-janik/iris/frontmatter"
 	"github.com/tim-janik/iris/htmlutil"
 	"github.com/tim-janik/iris/mimetype"
 	"github.com/tim-janik/iris/pandoc"
 	"github.com/tim-janik/iris/templates"
-	"go.yaml.in/yaml/v4"
 )
 
 // Server holds configuration for the markdown HTTP server.
@@ -50,29 +50,14 @@ type Server struct {
 	Site templates.SiteConfig
 }
 
-// serveFrontmatter holds the minimal YAML frontmatter parsed for serve.
-type serveFrontmatter struct {
-	Title    string   `yaml:"title"`
-	Keywords []string `yaml:"keywords"`
-}
-
-// parseServeFrontmatter splits content into frontmatter and body.
-// Returns empty frontmatter if no YAML block is present.
-func parseServeFrontmatter(content []byte) (*serveFrontmatter, string) {
-	fm := &serveFrontmatter{}
-	text := string(content)
-	if !strings.HasPrefix(text, "---\n") {
-		return fm, text
+func hasMarkdownH1(body string) bool {
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "# ") || strings.HasPrefix(line, "#\t") {
+			return true
+		}
 	}
-	idx := strings.Index(text[4:], "\n---\n")
-	if idx == -1 {
-		idx = strings.Index(text[4:], "\n...\n")
-	}
-	if idx == -1 {
-		return fm, text
-	}
-	yaml.Unmarshal([]byte(text[4:4+idx]), fm)
-	return fm, strings.TrimLeft(text[4+idx+4:], "\n")
+	return false
 }
 
 // extractBodyAndTitle parses a full HTML document and returns the body's inner
@@ -231,8 +216,14 @@ func (s *Server) Serve() error {
 			return
 		}
 
-		// Parse frontmatter for title
-		fm, _ := parseServeFrontmatter(data)
+		// Parse the shared frontmatter model. A synthesized title is passed to
+		// pandoc only when the markdown body has no H1; otherwise the existing
+		// H1 supplies the title and a command-line title would duplicate it.
+		fm, body := frontmatter.Parse(data, filepath.Base(absPath))
+		if fm.TitleSynthesized && hasMarkdownH1(body) {
+			fm.Title = ""
+			fm.TitleSynthesized = false
+		}
 
 		// Convert via pandoc or asciidoctor, extract full body (including <h1>)
 		var bodyContent string
@@ -246,7 +237,11 @@ func (s *Server) Serve() error {
 			}
 			bodyContent, convertedTitle = extractBodyAndTitle(htmlStr)
 		} else {
-			htmlStr, convErr := pandoc.Convert(cfg, data, "")
+			pandocTitle := ""
+			if fm.TitleSynthesized {
+				pandocTitle = fm.Title
+			}
+			htmlStr, convErr := pandoc.ConvertWithTitle(cfg, data, "", pandocTitle)
 			if convErr != nil {
 				log.Printf("[500] %s -> %s: %v", urlPath, absPath, convErr)
 				http.Error(w, fmt.Sprintf("Internal Server Error: %v", convErr), http.StatusInternalServerError)
@@ -266,8 +261,8 @@ func (s *Server) Serve() error {
 
 		// Render through serve.html template
 		serveData := templates.ServeData{
-			Site:  s.Site,
-			Title: title,
+			Site:    s.Site,
+			Title:   title,
 			Content: htmplt.HTML(bodyContent),
 		}
 		htmlBytes, err := eng.RenderServe(serveData)

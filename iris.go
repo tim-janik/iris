@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"runtime/debug"
 	"io"
 	"io/fs"
 	"log"
@@ -15,6 +14,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strconv"
@@ -24,13 +24,13 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/tim-janik/iris/adoc"
+	"github.com/tim-janik/iris/frontmatter"
 	"github.com/tim-janik/iris/globstar"
 	"github.com/tim-janik/iris/htmlutil"
 	"github.com/tim-janik/iris/pageclass"
 	"github.com/tim-janik/iris/pandoc"
 	"github.com/tim-janik/iris/serve"
 	"github.com/tim-janik/iris/templates"
-	"go.yaml.in/yaml/v4"
 )
 
 const dateLayout = "2006-01-02" // Go reference time: YYYY-MM-DD
@@ -39,60 +39,18 @@ const dateLayout = "2006-01-02" // Go reference time: YYYY-MM-DD
 // Markdown frontmatter parsing
 // ---------------------------------------------------------------------------
 
-// Frontmatter holds parsed YAML frontmatter from a .md file.
-type Frontmatter struct {
-	Title       string   `yaml:"title"`
-	Description string   `yaml:"description"`
-	Keywords    []string `yaml:"keywords"`
-	Published   string   `yaml:"published"` // YYYY-MM-DD
-	Authors     []string `yaml:"authors"`
-	Raw         map[string]any `yaml:",inline"`
-}
+// Frontmatter is the shared frontmatter model used by both the SSG and serve.
+type Frontmatter = frontmatter.Frontmatter
 
-// parseFrontmatter splits a markdown file into frontmatter and body.
-// Frontmatter is delimited by --- at the start and --- or ... on its own line.
-func parseFrontmatter(content []byte) (*Frontmatter, string) {
-	text := string(content)
-	fm := &Frontmatter{Raw: make(map[string]any)}
-
-	if !strings.HasPrefix(text, "---\n") {
-		return fm, text
+// parseFrontmatter keeps the historical main-package helper while routing all
+// callers through the shared parser. The source name is required for title
+// synthesis when a document has no explicit title.
+func parseFrontmatter(content []byte, sourceName ...string) (*Frontmatter, string) {
+	name := ""
+	if len(sourceName) > 0 {
+		name = sourceName[0]
 	}
-
-	idxDash := strings.Index(text[4:], "\n---\n")
-	idxDot := strings.Index(text[4:], "\n...\n")
-	idx := coalesceIndex(idxDash, idxDot)
-	if idx == -1 {
-		return fm, text
-	}
-
-	block := text[4 : 4+idx]
-	body := strings.TrimLeft(text[4+idx+4:], "\n")
-
-	if err := yaml.Unmarshal([]byte(block), fm); err != nil {
-		log.Printf("  yaml parse warning: %v", err)
-	}
-
-	// Normalize Keywords: if YAML parsed a single string (comma-separated),
-	// split it into a slice. Keywords can be a YAML list or a comma-separated string.
-	if len(fm.Keywords) == 1 && strings.Contains(fm.Keywords[0], ",") {
-		fm.Keywords = slices.DeleteFunc(strings.Split(fm.Keywords[0], ","), func(k string) bool {
-			return strings.TrimSpace(k) == ""
-		})
-	}
-
-	return fm, body
-}
-
-// coalesceIndex returns the first non-negative index, or -1 if both are -1.
-func coalesceIndex(a, b int) int {
-	if a == -1 {
-		return b
-	}
-	if b == -1 {
-		return a
-	}
-	return min(a, b)
+	return frontmatter.Parse(content, name)
 }
 
 // toString converts an any value to string, returning "" for nil.
@@ -118,19 +76,19 @@ func hasBlankKeywords(kw []string) bool {
 
 // InputPage represents a single input file to be processed.
 type InputPage struct {
-	RelPath    string           // relative path from input dir (e.g., "2024/hello.md")
-	OutputPath string           // output path (e.g., "2024/hello.html")
-	DirName    string           // directory name (e.g., "/2024")
-	Stem       string           // filename without extension (e.g., "hello")
-	Type       pageclass.PageType         // post, page, copy, asset, etc.
-	Depth      int              // directory depth
-	Root       string           // relative path to root (e.g., "../..")
+	RelPath    string             // relative path from input dir (e.g., "2024/hello.md")
+	OutputPath string             // output path (e.g., "2024/hello.html")
+	DirName    string             // directory name (e.g., "/2024")
+	Stem       string             // filename without extension (e.g., "hello")
+	Type       pageclass.PageType // post, page, copy, asset, etc.
+	Depth      int                // directory depth
+	Root       string             // relative path to root (e.g., "../..")
 	Front      *Frontmatter
-	Body       string           // markdown body (unprocessed)
-	Rendered   *pandoc.Result   // pandoc/asciidoctor-converted HTML
-	PubDate    time.Time        // publication date (frontmatter > earliest git commit > mtime)
-	ModDate    time.Time        // last-updated date (latest git commit > frontmatter > mtime)
-	Comments   []template.HTML  // pre-rendered comment HTML (for post pages)
+	Body       string          // markdown body (unprocessed)
+	Rendered   *pandoc.Result  // pandoc/asciidoctor-converted HTML
+	PubDate    time.Time       // publication date (frontmatter > earliest git commit > mtime)
+	ModDate    time.Time       // last-updated date (latest git commit > frontmatter > mtime)
+	Comments   []template.HTML // pre-rendered comment HTML (for post pages)
 }
 
 // PageLUID returns the stable LUID for this page.
@@ -248,7 +206,13 @@ func processSourceFile(rel, absPath, ext, inputDir string) (*InputPage, error) {
 		return nil, fmt.Errorf("read %s: %w", rel, err)
 	}
 
-	fm, body := parseFrontmatter(data)
+	fm, body := parseFrontmatter(data, rel)
+	if fm.TitleSynthesized && extractH1Title(body) != "" {
+		// The document already supplies its title through an H1. Do not pass
+		// the synthesized filename title to pandoc, which would duplicate it.
+		fm.Title = ""
+		fm.TitleSynthesized = false
+	}
 
 	// Convert via pandoc or asciidoctor
 	var rendered *pandoc.Result
@@ -266,7 +230,14 @@ func processSourceFile(rel, absPath, ext, inputDir string) (*InputPage, error) {
 		}
 	} else {
 		log.Printf("  pandoc %s", rel)
-		rendered, err = pandoc.ConvertAndDisassemble(pandoc.DefaultConfig(), data, "")
+		pandocTitle := ""
+		if fm.TitleSynthesized {
+			// Pandoc needs a command-line title for title-less documents that
+			// begin below H1; an explicit frontmatter title must not be passed
+			// because pandoc already reads it from the document metadata.
+			pandocTitle = fm.Title
+		}
+		rendered, err = pandoc.ConvertAndDisassembleWithTitle(pandoc.DefaultConfig(), data, "", pandocTitle)
 		if err != nil {
 			return nil, fmt.Errorf("pandoc %s: %w", rel, err)
 		}
@@ -399,7 +370,7 @@ func processStaticFile(rel, absPath string, assetMatcher *globstar.Matcher, inpu
 		Type:       pt,
 		Depth:      depth,
 		Root:       root,
-		Front:      &Frontmatter{Raw: make(map[string]any)},
+		Front:      &Frontmatter{Raw: make(map[string]string)},
 		PubDate:    pubDate,
 		ModDate:    modDate,
 	}, nil
@@ -471,7 +442,6 @@ func findDirs(pages []*InputPage) []string {
 
 // ---------------------------------------------------------------------------
 
-
 // ---------------------------------------------------------------------------
 // SSG rendering
 // ---------------------------------------------------------------------------
@@ -515,7 +485,7 @@ func defaultSiteConfig() SiteConfig {
 		IncludeGlob: []string{},
 		AssetGlob:   []string{},
 		ExcludeGlob: []string{"_*"}, // default: skip config/template prefixes
-		TitlePrefix: "", // "📜 ",
+		TitlePrefix: "",             // "📜 ",
 	}
 }
 
@@ -560,7 +530,7 @@ func renderPage(eng *templates.Engine, pg *InputPage, site templates.SiteConfig)
 	}
 
 	pageData := templates.TemplateData{
-		Site:      site,
+		Site:           site,
 		ShowIndexTitle: pg.Type == pageclass.PageDirIndex,
 		Page: templates.PageData{
 			Title:         pg.Front.Title,
@@ -713,7 +683,7 @@ func indexMain() {
 			fmt.Fprintf(os.Stderr, "read %s: %v\n", filePath, err)
 			continue
 		}
-		fm, body := parseFrontmatter(data)
+		fm, body := parseFrontmatter(data, filePath)
 
 		title := fm.Title
 		if title == "" {
@@ -743,12 +713,12 @@ func indexMain() {
 
 // ssgArgs holds the parsed SSG command arguments.
 type ssgArgs struct {
-	clearOutput  bool
-	inputDir     string
-	outputDir    string
-	configFile   string // explicit config file path (-c flag)
-	templateDir  string // custom template directory (-t flag, overrides embedded)
-	workers      int    // max concurrent pandoc/asciidoctor workers
+	clearOutput bool
+	inputDir    string
+	outputDir   string
+	configFile  string // explicit config file path (-c flag)
+	templateDir string // custom template directory (-t flag, overrides embedded)
+	workers     int    // max concurrent pandoc/asciidoctor workers
 }
 
 // parseSSGArgs parses command-line arguments for the ssg subcommand.
@@ -1306,7 +1276,7 @@ func calcPriority(pg *InputPage, loc string, now time.Time) string {
 	if modAge <= 66 {
 		credits++
 	}
-	return formatPriority(5+score+credits)
+	return formatPriority(5 + score + credits)
 }
 
 // calcPriorityForPath computes priority for a path that isn't an InputPage
@@ -1318,7 +1288,7 @@ func calcPriorityForPath(loc string, depth int) string {
 	if depth == 0 {
 		credits++
 	}
-	return formatPriority(5+score+credits)
+	return formatPriority(5 + score + credits)
 }
 
 // formatPriority clamps and formats a raw priority score.

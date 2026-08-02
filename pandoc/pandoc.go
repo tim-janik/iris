@@ -51,6 +51,13 @@ type Result struct {
 // Convert runs pandoc on the given text and returns the full HTML.
 // The inputFormat overrides cfg.InputFormat if non-empty.
 func Convert(cfg Config, data []byte, inputFormat string) (string, error) {
+	return ConvertWithTitle(cfg, data, inputFormat, "")
+}
+
+// ConvertWithTitle is like Convert, but passes a title to pandoc only when
+// title is non-empty. The argument is passed directly (not through a shell),
+// so source metadata cannot become command-line syntax.
+func ConvertWithTitle(cfg Config, data []byte, inputFormat, title string) (string, error) {
 	cmd := exec.Command("pandoc")
 	inFmt := cfg.InputFormat
 	if inputFormat != "" {
@@ -58,6 +65,9 @@ func Convert(cfg Config, data []byte, inputFormat string) (string, error) {
 	}
 	cmd.Args = append(cmd.Args, "-f", inFmt)
 	cmd.Args = append(cmd.Args, cfg.ExtraArgs...)
+	if title != "" {
+		cmd.Args = append(cmd.Args, "--metadata", "title="+title)
+	}
 	cmd.Args = append(cmd.Args, "-o", "-")
 
 	cmd.Stdin = bytes.NewReader(data)
@@ -74,7 +84,12 @@ func Convert(cfg Config, data []byte, inputFormat string) (string, error) {
 // ConvertAndDisassemble runs pandoc and parses the output into structured fields.
 // The inputFormat overrides cfg.InputFormat if non-empty.
 func ConvertAndDisassemble(cfg Config, data []byte, inputFormat string) (*Result, error) {
-	htmlStr, err := Convert(cfg, data, inputFormat)
+	return ConvertAndDisassembleWithTitle(cfg, data, inputFormat, "")
+}
+
+// ConvertAndDisassembleWithTitle is the title-aware disassembling variant.
+func ConvertAndDisassembleWithTitle(cfg Config, data []byte, inputFormat, title string) (*Result, error) {
+	htmlStr, err := ConvertWithTitle(cfg, data, inputFormat, title)
 	if err != nil {
 		return nil, err
 	}
