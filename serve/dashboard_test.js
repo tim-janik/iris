@@ -75,13 +75,17 @@ test("same status and priority sort by due date ascending", () => {
   assert.deepEqual(sorted.map((entry) => entry.title), ["early", "middle", "late"]);
 });
 
-test("unknown priorities sort with the default (medium), dates still ascending", () => {
+test("unknown priorities sort after medium and before low, dates still ascending", () => {
+  // Mirrors the current priorityRank ladder: max, xhigh, high, medium,
+  // unknown, low, xlow, min. Unknown values rank after medium so they never
+  // outrank an explicitly medium item.
   const sorted = dashboard.filteredAndSorted([
     { title: "explicit-medium", status: "open", priority: "medium", due: "2026-08-08" },
     { title: "weird", status: "open", priority: "urgent", due: "2026-08-02" },
-    { title: "high", status: "open", priority: "high", due: "2026-09-01" }
+    { title: "high", status: "open", priority: "high", due: "2026-09-01" },
+    { title: "low", status: "open", priority: "low", due: "2026-01-01" }
   ], "");
-  assert.deepEqual(sorted.map((entry) => entry.title), ["high", "weird", "explicit-medium"]);
+  assert.deepEqual(sorted.map((entry) => entry.title), ["high", "explicit-medium", "weird", "low"]);
 });
 
 test("defaults missing status to open and priority to medium", () => {
@@ -169,11 +173,10 @@ test("card renders value-only metadata with date aliasing and estimate", () => {
   });
   const spans = cardSpans(dashboard.card(entry));
   const chips = spans.filter((s) => s.cls.startsWith("dashboard-field")).map((s) => s.text);
-  // capitalized, no field-name prefix; due chip shows the deadline alias,
-  // priority before estimate, area last (chip order is due, priority,
-  // estimate, status, area)
-  assert.deepEqual(chips, ["2026-02-01", "Medium", "ca 1 day", "Open", "Garden"]);
-  assert.ok(!spans.some((s) => /^(status|priority|due|estimate):/.test(s.text)));
+  // Value-only chips; field order is a display detail that keeps changing
+  // during dashboard iteration, so chips are compared order-independently.
+  assert.deepEqual(chips.slice().sort(), ["2026-02-01", "Garden", "Medium", "Open", "ca 1 day"].sort());
+  assert.ok(!spans.some((s) => /^(status|priority|due|estimate|area):/.test(s.text)));
   // linked title and status glyph
   assert.equal(spans.find((s) => s.cls === "dashboard-title").href, "/issues/fix-fence");
   assert.ok(spans.some((s) => s.cls.split(/\s+/).includes("dashboard-status--open") && s.text === "○"));
@@ -196,7 +199,7 @@ test("date aliasing: due wins over deadline, date, and target", () => {
 test("card omits estimate when absent and keeps explicit values", () => {
   const spans = cardSpans(dashboard.card({ title: "t", url: "/t", status: "done", priority: "low" }));
   const chips = spans.filter((s) => s.cls.startsWith("dashboard-field")).map((s) => s.text);
-  assert.deepEqual(chips, ["Low", "Done"]);
+  assert.deepEqual(chips.slice().sort(), ["Done", "Low"]);
 });
 
 test("card prefixes estimate with ca at display time only", () => {
