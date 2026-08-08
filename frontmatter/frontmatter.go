@@ -21,9 +21,9 @@ type Frontmatter struct {
 	Authors     []string
 	Raw         map[string]string
 
-	// TitleSynthesized is true when Title came from the source filename rather
-	// than frontmatter.  A converter can use this to provide a title explicitly
-	// when the document has no H1 (pandoc otherwise rejects such documents).
+	// TitleSynthesized is true when Title did not come from the file header.
+	// It was made from the file name or the first heading. Only pass it
+	// on when the file has no heading, so the title does not show twice.
 	TitleSynthesized bool
 }
 
