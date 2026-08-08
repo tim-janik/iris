@@ -21,9 +21,15 @@ type Frontmatter struct {
 	Authors     []string
 	Raw         map[string]string
 
-	// TitleSynthesized is true when Title came from the source filename rather
-	// than frontmatter.  A converter can use this to provide a title explicitly
-	// when the document has no H1 (pandoc otherwise rejects such documents).
+	// TitleSynthesized is true when Title came from the source (filename stem,
+	// or the first AsciiDoc heading) rather than from frontmatter. For
+	// markdown, a converter can use this to provide a title explicitly on the
+	// pandoc command line when the document has no H1 (pandoc otherwise
+	// rejects such documents); when the flag is false, pandoc must NOT receive
+	// a cmdline title (to avoid double titles from an existing H1 or a
+	// frontmatter .title). For AsciiDoc, iris synthesizes the title the way
+	// asciidoctor extracts it (first heading of any level) so templates and
+	// the issue dashboard can display it without running asciidoctor.
 	TitleSynthesized bool
 }
 
