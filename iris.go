@@ -84,7 +84,6 @@ type InputPage struct {
 	Depth      int                // directory depth
 	Root       string             // relative path to root (e.g., "../..")
 	Front      *Frontmatter
-	Body       string          // markdown body (unprocessed)
 	Rendered   *pandoc.Result  // pandoc/asciidoctor-converted HTML
 	PubDate    time.Time       // publication date (frontmatter > earliest git commit > mtime)
 	ModDate    time.Time       // last-updated date (latest git commit > frontmatter > mtime)
@@ -216,7 +215,7 @@ func processSourceFile(rel, absPath, ext, inputDir string) (*InputPage, error) {
 		if t := adoc.TitleFromSource(data); t != "" {
 			fm.Title = t
 		}
-	} else if fm.TitleSynthesized && extractH1Title(body) != "" {
+	} else if fm.TitleSynthesized && frontmatter.H1Title(body) != "" {
 		// The document already supplies its title through an H1. Do not pass
 		// the synthesized filename title to pandoc, which would duplicate it.
 		fm.Title = ""
@@ -321,7 +320,6 @@ func processSourceFile(rel, absPath, ext, inputDir string) (*InputPage, error) {
 		Depth:      depth,
 		Root:       root,
 		Front:      fm,
-		Body:       body,
 		Rendered:   rendered,
 		PubDate:    pubDate,
 		ModDate:    modDate,
@@ -416,9 +414,12 @@ func gitAuthorDates(filePath string) (first, last time.Time) {
 		log.Printf("  git parse error %s: %q", filePath, lines[len(lines)-1])
 		return
 	}
-	// Normalize all times to UTC for consistency.
-	// formatDate() already calls .UTC() for rfc8601/rfc822z.
-	// For date-only formats, UTC ensures the date is stable regardless of server timezone.
+	// Normalize all times to UTC so direct .Format() call sites (footer
+	// "Last updated", sitemap lastmod, feed lastBuildDate) are stable across
+	// timezones. Note: formatDate() in templates/scaffold.go re-renders
+	// date-only formats in local time (t.Local()) by design — matching the
+	// golden output — so page meta dates (DC.date.issued etc.) do depend on
+	// the build machine's TZ.
 	first = first.UTC()
 	last = last.UTC()
 	return
@@ -657,17 +658,6 @@ func writeConfigTOML(w io.Writer, cfg SiteConfig) error {
 // Index subcommand — generate index.md lines from a list of .md files
 // ---------------------------------------------------------------------------
 
-// extractH1Title returns the first top-level heading (# ...) from markdown text.
-func extractH1Title(text string) string {
-	for _, line := range strings.Split(text, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "# ") && !strings.HasPrefix(trimmed, "## ") {
-			return strings.TrimPrefix(trimmed, "# ")
-		}
-	}
-	return ""
-}
-
 // indexArgs holds the parsed index command arguments.
 type indexArgs struct {
 	files []string
@@ -700,7 +690,7 @@ func indexMain() {
 
 		title := fm.Title
 		if title == "" {
-			title = extractH1Title(body)
+			title = frontmatter.H1Title(body)
 		}
 		if title == "" {
 			title = filepath.Base(strings.TrimSuffix(filePath, filepath.Ext(filePath)))
@@ -1499,17 +1489,4 @@ func cleanURL(path string) string {
 		return dir
 	}
 	return strings.TrimSuffix(path, ".html")
-}
-
-// execPath returns the absolute path of the running binary.
-func execPath() string {
-	path, err := exec.LookPath(os.Args[0])
-	if err != nil {
-		return os.Args[0]
-	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return path
-	}
-	return abs
 }

@@ -141,6 +141,23 @@ func titleFromSource(sourceName string) string {
 	return base
 }
 
+// H1Title returns the text of the first top-level ATX heading (# Title) in a
+// markdown body, or "" when the document has no H1. Deeper headings (## …)
+// don't count. Used to decide whether a document supplies its own title when
+// frontmatter has none (TitleSynthesized handling).
+func H1Title(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "## ") || strings.HasPrefix(trimmed, "##\t") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "# ") || strings.HasPrefix(trimmed, "#\t") {
+			return strings.TrimSpace(trimmed[2:])
+		}
+	}
+	return ""
+}
+
 // nodeStrings supports both YAML sequences and the comma-separated scalar
 // spelling accepted by the original Iris parser.
 func nodeStrings(node *yaml.Node) []string {

@@ -97,3 +97,18 @@ func TestKnownKeysAreCanonical(t *testing.T) {
 		t.Fatalf("raw = %#v", fm.Raw)
 	}
 }
+
+func TestH1Title(t *testing.T) {
+	for _, tc := range []struct{ body, want string }{
+		{"# Title\n\nBody\n", "Title"},
+		{"#\tTab Title\n", "Tab Title"},
+		{"## Not H1\n\n# Real H1\n", "Real H1"},
+		{"Intro\n\n## Section\n", ""},
+		{"#  Spaced  \n", "Spaced"},
+		{"", ""},
+	} {
+		if got := H1Title(tc.body); got != tc.want {
+			t.Errorf("H1Title(%q) = %q, want %q", tc.body, got, tc.want)
+		}
+	}
+}
