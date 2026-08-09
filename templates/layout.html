@@ -17,7 +17,7 @@
 {{- define "head"}}  <meta charset="utf-8"/>
   <title>{{if .Page.Title}}{{.Page.Title}}{{else}}{{.Site.Title}}{{end}} | {{.Site.Slogan}}</title>
   <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-  {{if .Site.Stylesheet}}<link href="{{.Site.Stylesheet}}" rel="stylesheet"/>{{end}}
+  {{if .Page.StylesheetHref}}<link href="{{.Page.StylesheetHref}}" rel="stylesheet"/>{{end}}
   <style>
     figure       { text-align: center; }
     figcaption   { color: #555; }
