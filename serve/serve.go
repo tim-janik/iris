@@ -74,16 +74,6 @@ type Server struct {
 	Site templates.SiteConfig
 }
 
-func hasMarkdownH1(body string) bool {
-	for _, line := range strings.Split(body, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "# ") || strings.HasPrefix(line, "#\t") {
-			return true
-		}
-	}
-	return false
-}
-
 // extractBodyAndTitle parses a full HTML document and returns the body's inner
 // HTML (including any <h1>) and the page title.
 // Title resolution mirrors pandoc.extractTitle: <h1> takes priority over <title>.
@@ -510,7 +500,7 @@ func (s *Server) Serve() error {
 		// pandoc only when the markdown body has no H1; otherwise the existing
 		// H1 supplies the title and a command-line title would duplicate it.
 		fm, body := frontmatter.Parse(data, filepath.Base(absPath))
-		if fm.TitleSynthesized && hasMarkdownH1(body) {
+		if fm.TitleSynthesized && frontmatter.H1Title(body) != "" {
 			fm.Title = ""
 			fm.TitleSynthesized = false
 		}

@@ -180,15 +180,6 @@ const (
 	iso8601    = "2006-01-02T15:04:05Z" // ISO 8601
 )
 
-type pageType int
-
-const (
-	ptPage      pageType = iota // regular page
-	ptPost                      // blog post with comments
-	ptDirIndex                  // directory index (blog listing)
-	ptTopIndex                  // top-level index
-)
-
 // Engine holds parsed templates and provides rendering methods.
 type Engine struct {
 	// HTML page templates use html/template for auto-escaping.
