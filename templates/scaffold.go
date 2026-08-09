@@ -80,6 +80,33 @@ type PageData struct {
 	LUID        string // page.get_luid()
 	EmailPath   string // precomputed path for mailto comment URL (e.g., "/2005/stem")
 	CommentLink htmplt.HTML // precomputed <a> tag for comment link (bypasses URL escaping)
+	// StylesheetHref is the stylesheet link href resolved against the page
+	// root (see ResolveStylesheet); empty when no stylesheet is configured.
+	StylesheetHref string
+}
+
+// ResolveStylesheet resolves a site-wide stylesheet path against a page's
+// root prefix, mirroring the original Jinja2 templates
+// ({{page.root}}/assets/nirvi.css): a relative path like "assets/site.css"
+// or "./assets/site.css" becomes "./assets/site.css" on top-level pages and
+// "../assets/site.css" on pages one directory deep, so the link works
+// regardless of page depth. Absolute URLs (http(s)://, //) and root-relative
+// paths ("/assets/site.css") are returned unchanged.
+func ResolveStylesheet(stylesheet, root string) string {
+	s := strings.TrimSpace(stylesheet)
+	if s == "" {
+		return ""
+	}
+	if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") ||
+		strings.HasPrefix(s, "//") || strings.HasPrefix(s, "/") {
+		return s
+	}
+	s = strings.TrimPrefix(s, "./")
+	root = strings.TrimRight(root, "/")
+	if root == "" {
+		root = "."
+	}
+	return root + "/" + s
 }
 
 // FeedItem represents a single item in a feed or directory listing.

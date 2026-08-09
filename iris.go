@@ -545,20 +545,21 @@ func renderPage(eng *templates.Engine, pg *InputPage, site templates.SiteConfig)
 		Site:           site,
 		ShowIndexTitle: pg.Type == pageclass.PageDirIndex,
 		Page: templates.PageData{
-			Title:         pg.Front.Title,
-			Header:        template.HTML(pg.Rendered.Header),
-			Content:       template.HTML(fullContent),
-			FooterUpdated: footerUpdated,
-			Keywords:      pg.Front.Keywords,
-			Authors:       authors,
-			DirName:       pg.DirName,
-			Stem:          pg.Stem,
-			Depth:         pg.Depth,
-			IsPost:        pg.Type.IsPost(),
-			PublishedDate: pg.PubDate,
-			ModifiedDate:  pg.ModDate,
-			LUID:          computeLUID(pg.DirName + pg.Stem),
-			EmailPath:     strings.TrimSuffix(pg.DirName, "/") + "/" + pg.Stem,
+			Title:          pg.Front.Title,
+			Header:         template.HTML(pg.Rendered.Header),
+			Content:        template.HTML(fullContent),
+			FooterUpdated:  footerUpdated,
+			Keywords:       pg.Front.Keywords,
+			Authors:        authors,
+			DirName:        pg.DirName,
+			Stem:           pg.Stem,
+			Depth:          pg.Depth,
+			IsPost:         pg.Type.IsPost(),
+			PublishedDate:  pg.PubDate,
+			ModifiedDate:   pg.ModDate,
+			LUID:           computeLUID(pg.DirName + pg.Stem),
+			EmailPath:      strings.TrimSuffix(pg.DirName, "/") + "/" + pg.Stem,
+			StylesheetHref: templates.ResolveStylesheet(site.Stylesheet, pg.Root),
 			CommentLink: template.HTML(fmt.Sprintf(
 				`<a href="mailto:newcomment+%s@testbit.eu?subject=Add%%20comment%%20to%%20%s&body=Add%%20comment%%20to%%20%s:%%0a%%0a"
 				   title="Send comment to publish via email, the email address itself is not published"
@@ -1133,9 +1134,10 @@ func generateDirIndices(eng *templates.Engine, pages []*InputPage, siteGo templa
 		pageData := templates.TemplateData{
 			Site: siteGo,
 			Page: templates.PageData{
-				Title:         "", // D2: leave empty so template falls back to site title
-				DirName:       dirName,
-				FooterUpdated: "",
+				Title:          "", // D2: leave empty so template falls back to site title
+				DirName:        dirName,
+				FooterUpdated:  "",
+				StylesheetHref: templates.ResolveStylesheet(siteGo.Stylesheet, root),
 			},
 			Root:           root,
 			BodyClass:      bodyClass,
