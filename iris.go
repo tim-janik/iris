@@ -42,17 +42,6 @@ const dateLayout = "2006-01-02" // Go reference time: YYYY-MM-DD
 // Frontmatter is the shared frontmatter model used by both the SSG and serve.
 type Frontmatter = frontmatter.Frontmatter
 
-// parseFrontmatter keeps the historical main-package helper while routing all
-// callers through the shared parser. The source name is required for title
-// synthesis when a document has no explicit title.
-func parseFrontmatter(content []byte, sourceName ...string) (*Frontmatter, string) {
-	name := ""
-	if len(sourceName) > 0 {
-		name = sourceName[0]
-	}
-	return frontmatter.Parse(content, name)
-}
-
 // toString converts an any value to string, returning "" for nil.
 func toString(v any) string {
 	if v == nil {
@@ -186,7 +175,7 @@ func processSourceFile(rel, absPath, ext, inputDir string) (*InputPage, error) {
 		return nil, fmt.Errorf("read %s: %w", rel, err)
 	}
 
-	fm, body := parseFrontmatter(data, rel)
+	fm, body := frontmatter.Parse(data, rel)
 	if ext == ".adoc" && fm.TitleSynthesized {
 		// AsciiDoc: synthesize the title the way asciidoctor extracts it (first
 		// heading of any level) instead of the filename stem, so templates and
@@ -667,7 +656,7 @@ func indexMain() {
 			fmt.Fprintf(os.Stderr, "read %s: %v\n", filePath, err)
 			continue
 		}
-		fm, body := parseFrontmatter(data, filePath)
+		fm, body := frontmatter.Parse(data, filePath)
 
 		title := fm.Title
 		if title == "" {
