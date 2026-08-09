@@ -4,6 +4,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"golang.org/x/sync/errgroup"
 	"html/template"
 	"io"
 	"io/fs"
@@ -19,7 +20,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -138,53 +138,34 @@ func processAllFiles(paths []string, inputDir, outputDir string, workers int, as
 	// Pre-allocate output slice to preserve order
 	pages := make([]*InputPage, len(paths))
 
-	// Channel to fan out work, bounded by worker count
-	jobs := make(chan int, workers)
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	var firstErr error
+	// Process files concurrently, bounded by the worker count. The first
+	// error aborts the run; Wait returns it after all workers finish.
+	var g errgroup.Group
+	g.SetLimit(workers)
+	for idx, rel := range paths {
+		idx, rel := idx, rel
+		g.Go(func() error {
+			ext := filepath.Ext(rel)
+			absPath := filepath.Join(inputDir, rel)
 
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for idx := range jobs {
-				rel := paths[idx]
-				ext := filepath.Ext(rel)
-				absPath := filepath.Join(inputDir, rel)
-
-				// Classify: .md/.adoc → convert+render, everything else → static
-				var pg *InputPage
-				var err error
-				switch ext {
-				case ".md", ".adoc":
-					pg, err = processSourceFile(rel, absPath, ext, inputDir)
-				default:
-					pg, err = processStaticFile(rel, absPath, assetMatcher, inputDir, outputDir)
-				}
-
-				mu.Lock()
-				if firstErr == nil {
-					if err != nil {
-						firstErr = err
-					} else {
-						pages[idx] = pg
-					}
-				}
-				mu.Unlock()
+			// Classify: .md/.adoc → convert+render, everything else → static
+			var pg *InputPage
+			var err error
+			switch ext {
+			case ".md", ".adoc":
+				pg, err = processSourceFile(rel, absPath, ext, inputDir)
+			default:
+				pg, err = processStaticFile(rel, absPath, assetMatcher, inputDir, outputDir)
 			}
-		}()
+			if err != nil {
+				return err
+			}
+			pages[idx] = pg
+			return nil
+		})
 	}
-
-	// Fan out work
-	for i := range paths {
-		jobs <- i
-	}
-	close(jobs)
-	wg.Wait()
-
-	if firstErr != nil {
-		return nil, firstErr
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
 	// Filter out nil entries (shouldn't happen, but defensive)
