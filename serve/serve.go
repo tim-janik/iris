@@ -44,6 +44,8 @@ type Server struct {
 	EditLinkCmd string
 	// TemplateDir is a custom template directory (overrides embedded templates).
 	TemplateDir string
+	// FaviconPath is the path to a favicon file served at /favicon.ico.
+	FaviconPath string
 	// Site holds site-level configuration (title, slogan, stylesheet, etc.).
 	Site templates.SiteConfig
 }
@@ -74,21 +76,28 @@ func parseServeFrontmatter(content []byte) (*serveFrontmatter, string) {
 }
 
 // extractBodyAndTitle parses a full HTML document and returns the body's inner
-// HTML (including any <h1>) and the page title (from <title> or first <h1>).
+// HTML (including any <h1>) and the page title.
+// Title resolution mirrors pandoc.extractTitle: <h1> takes priority over <title>.
+// Pandoc emits <title>-</title> as a placeholder when no metadata title is set;
+// treat that as empty so the caller can fall back to the filename.
 func extractBodyAndTitle(htmlStr string) (string, string) {
 	doc, err := htmlutil.Parse(htmlStr)
 	if err != nil {
 		return htmlStr, ""
 	}
-	title := htmlutil.Text(htmlutil.FindByTag(doc, "title"))
 	body := htmlutil.FindByTag(doc, "body")
 	if body == nil {
-		return htmlStr, title
+		return htmlStr, ""
 	}
-	if title == "" {
-		if h1 := htmlutil.FindByTag(body, "h1"); h1 != nil {
-			title = htmlutil.Text(h1)
-		}
+	// <h1> first (matches pandoc.extractTitle), then <title>, then empty
+	var title string
+	if h1 := htmlutil.FindByTag(body, "h1"); h1 != nil {
+		title = htmlutil.Text(h1)
+	} else if t := htmlutil.FindByTag(doc, "title"); t != nil {
+		title = htmlutil.Text(t)
+	}
+	if title == "-" {
+		title = ""
 	}
 	return strings.TrimSpace(htmlutil.InnerHTML(body)), title
 }
@@ -118,6 +127,20 @@ func (s *Server) Serve() error {
 	cfg := s.PandocConfig
 
 	mux := http.NewServeMux()
+
+	// Serve favicon if configured (exact path takes priority over catch-all "/").
+	if s.FaviconPath != "" {
+		mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet && r.Method != http.MethodHead {
+				http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			log.Printf("[200] /favicon.ico -> %s", s.FaviconPath)
+			w.Header().Set("Content-Type", "image/x-icon")
+			http.ServeFile(w, r, s.FaviconPath)
+		})
+	}
+
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -125,6 +148,22 @@ func (s *Server) Serve() error {
 		}
 
 		urlPath := normalizePath(r.URL.Path)
+
+		// Redirect .md/.adoc URLs to clean URLs (e.g. /foo.md → /foo)
+		// unless ?noredirect is set to request the raw source.
+		if ext := filepath.Ext(urlPath); ext == ".md" || ext == ".adoc" {
+			if !r.URL.Query().Has("noredirect") {
+				if _, err := os.Stat(filepath.Join(s.Root, urlPath)); err == nil {
+					target := strings.TrimSuffix(urlPath, ext)
+					if target == "" {
+						target = "/"
+					}
+					log.Printf("[302] %s -> %s", urlPath, target)
+					http.Redirect(w, r, target, http.StatusFound)
+					return
+				}
+			}
+		}
 
 		// Try the path as-is first, then append .md, then .adoc.
 		// convertToHTML is true only when we found the file by appending an extension
@@ -163,7 +202,11 @@ func (s *Server) Serve() error {
 				return
 			}
 			log.Printf("[200] %s -> %s (passthrough)", urlPath, absPath)
-			w.Header().Set("Content-Type", mimetype.Lookup(ext))
+			mimeType := mimetype.Lookup(ext)
+			if strings.HasPrefix(mimeType, "text/") {
+				mimeType += "; charset=utf-8"
+			}
+			w.Header().Set("Content-Type", mimeType)
 			f, err := os.Open(absPath)
 			if err != nil {
 				log.Printf("[500] %s: open error: %v", absPath, err)
@@ -212,10 +255,13 @@ func (s *Server) Serve() error {
 			bodyContent, convertedTitle = extractBodyAndTitle(htmlStr)
 		}
 
-		// Resolve title: frontmatter > converter-extracted title
+		// Resolve title: frontmatter > h1 from converter > filename (with extension)
 		title := fm.Title
 		if title == "" {
 			title = convertedTitle
+		}
+		if title == "" {
+			title = filepath.Base(absPath)
 		}
 
 		// Render through serve.html template

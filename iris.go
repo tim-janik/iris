@@ -496,6 +496,7 @@ type SiteConfig struct {
 	AssetGlob     []string `toml:"asset_glob"     comment:"Glob patterns for static assets (copied verbatim, no sitemap entry)"`
 	ExcludeGlob   []string `toml:"exclude_glob"   comment:"Glob patterns for files to skip (default: skip _-prefixed files)"`
 	Stylesheet    string   `toml:"stylesheet"     comment:"Custom stylesheet path (e.g. \"assets/site.css\"); empty = use converter defaults"`
+	TitlePrefix   string   `toml:"title_prefix"   comment:"Prefix prepended to page titles in <title> (e.g. \"📚 \")"`
 }
 
 func defaultSiteConfig() SiteConfig {
@@ -514,6 +515,7 @@ func defaultSiteConfig() SiteConfig {
 		IncludeGlob: []string{},
 		AssetGlob:   []string{},
 		ExcludeGlob: []string{"_*"}, // default: skip config/template prefixes
+		TitlePrefix: "", // "📜 ",
 	}
 }
 
@@ -669,6 +671,73 @@ func writeConfigTOML(w io.Writer, cfg SiteConfig) error {
 }
 
 // ---------------------------------------------------------------------------
+// Index subcommand — generate index.md lines from a list of .md files
+// ---------------------------------------------------------------------------
+
+// extractH1Title returns the first top-level heading (# ...) from markdown text.
+func extractH1Title(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "# ") && !strings.HasPrefix(trimmed, "## ") {
+			return strings.TrimPrefix(trimmed, "# ")
+		}
+	}
+	return ""
+}
+
+// indexArgs holds the parsed index command arguments.
+type indexArgs struct {
+	files []string
+}
+
+// parseIndexArgs parses command-line arguments for the index subcommand.
+func parseIndexArgs() indexArgs {
+	fs := flag.NewFlagSet("index", flag.ExitOnError)
+	fs.Parse(os.Args[2:])
+
+	args := fs.Args()
+	if len(args) == 0 {
+		fmt.Fprintf(os.Stderr, "Usage: %s index <file.md> [file2.md ...]\n", os.Args[0])
+		os.Exit(1)
+	}
+	return indexArgs{files: args}
+}
+
+// indexMain reads each .md file, extracts title and description from frontmatter
+// (falling back to the first h1 for title), and prints index.md lines to stdout.
+func indexMain() {
+	args := parseIndexArgs()
+	for _, filePath := range args.files {
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "read %s: %v\n", filePath, err)
+			continue
+		}
+		fm, body := parseFrontmatter(data)
+
+		title := fm.Title
+		if title == "" {
+			title = extractH1Title(body)
+		}
+		if title == "" {
+			title = filepath.Base(strings.TrimSuffix(filePath, filepath.Ext(filePath)))
+		}
+
+		// Strip .md/.adoc extension for clean URLs (matches iris serve)
+		link := filePath
+		if ext := filepath.Ext(filePath); ext == ".md" || ext == ".adoc" {
+			link = strings.TrimSuffix(filePath, ext)
+		}
+
+		if fm.Description != "" {
+			fmt.Printf("- [%s](%s) — %s\n", title, link, fm.Description)
+		} else {
+			fmt.Printf("- [%s](%s)\n", title, link)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -726,6 +795,7 @@ type serveArgs struct {
 	port        int    // TCP port to listen on
 	editLinkCmd string // command template for edit links (empty = disabled)
 	templateDir string // custom template directory (overrides embedded templates)
+	faviconPath string // path to favicon file served at /favicon.ico
 }
 
 // parseServeArgs parses command-line arguments for the serve subcommand.
@@ -734,6 +804,7 @@ func parseServeArgs() serveArgs {
 	port := fs.Int("port", 9454, "TCP port to listen on (default: 9454)")
 	editLinkCmd := fs.String("editlink", "", "command template to open source file in editor (empty = disabled); use %s for file path, %u for line number")
 	templateDir := fs.String("t", "", "custom template directory (overrides embedded templates)")
+	faviconPath := fs.String("favicon", "", "path to favicon file served at /favicon.ico")
 	fs.Parse(os.Args[2:])
 
 	args := fs.Args()
@@ -743,7 +814,7 @@ func parseServeArgs() serveArgs {
 	}
 
 	root, _ := filepath.Abs(args[0])
-	return serveArgs{root: root, port: *port, editLinkCmd: *editLinkCmd, templateDir: *templateDir}
+	return serveArgs{root: root, port: *port, editLinkCmd: *editLinkCmd, templateDir: *templateDir, faviconPath: *faviconPath}
 }
 
 // serveMain is the main entry point for the serve subcommand.
@@ -754,8 +825,12 @@ func serveMain() {
 		log.Fatalf("root path does not exist: %s", args.root)
 	}
 
-	// Load site config from root dir; falls back to defaults if config missing.
-	site := loadSiteConfig(args.root, "")
+	// Auto-detect config file in root directory; falls back to defaults if missing.
+	configFile := ""
+	if _, err := os.Stat(filepath.Join(args.root, defaultConfigPath)); err == nil {
+		configFile = filepath.Join(args.root, defaultConfigPath)
+	}
+	site := loadSiteConfig(args.root, configFile)
 
 	srv := &serve.Server{
 		Root:         args.root,
@@ -764,6 +839,7 @@ func serveMain() {
 		AdocConfig:   adoc.DefaultConfig(),
 		EditLinkCmd:  args.editLinkCmd,
 		TemplateDir:  args.templateDir,
+		FaviconPath:  args.faviconPath,
 		Site:         toTemplateSite(site),
 	}
 
@@ -815,6 +891,7 @@ func toTemplateSite(site SiteConfig) templates.SiteConfig {
 		IconHref:    site.IconHref,
 		LogoHref:    site.LogoHref,
 		Stylesheet:  site.Stylesheet,
+		TitlePrefix: site.TitlePrefix,
 	}
 }
 
@@ -827,6 +904,8 @@ func main() {
 	switch os.Args[1] {
 	case "init":
 		initConfig(parseInitArgs())
+	case "index":
+		indexMain()
 	case "ssg":
 		ssgMain()
 	case "serve":
@@ -846,6 +925,7 @@ func printUsage() {
 
 Subcommands:
   init      Create _siteconfig.toml with default settings
+  index     Generate index.md lines from a list of .md files
   ssg       Build the site (convert, render, generate feeds/sitemap)
   serve     Start an HTTP server that renders .md files to HTML on-the-fly
   version   Print version and build information
@@ -853,6 +933,8 @@ Subcommands:
 Run "iris <subcommand> -h" for more information on a subcommand.
 
 Examples:
+  iris index page1.md page2.md
+	Print markdown link lines suitable for index.md
   iris serve ./docs --port 9454
 	Serves all .md files under ./docs as rendered HTML on localhost:9454
 `)
@@ -1298,10 +1380,10 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 	})
 
 	// Use newest page's published date for reproducible builds
-	lastBuild := feedItems[0].PublishedDate
-	if len(feedItems) == 0 {
-		lastBuild = time.Time{} // zero time when no posts
-	}
+	var lastBuild time.Time
+	if len(feedItems) > 0 {
+		lastBuild = feedItems[0].PublishedDate
+	} // zero time when no posts
 
 	// Helper to track successfully written feed files for sitemap
 	feedLastBuild := lastBuild
@@ -1396,7 +1478,7 @@ func computePathInfoForDir(dir string) (dirName string, depth int, root string) 
 		return dirName, 0, "."
 	}
 	depth = strings.Count(dir, "/") + 1
-	return dirName, depth, strings.Repeat("..", depth)
+	return dirName, depth, strings.TrimRight(strings.Repeat("../", depth), "/")
 }
 
 // cleanURL strips the .html extension for clean URLs.

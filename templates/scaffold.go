@@ -53,6 +53,7 @@ type SiteConfig struct {
 	TeaserLen   int      // site.teaser_len (excerpt length for feeds)
 	DescLen     int      // site.desc_len (excerpt length for directory listings)
 	Stylesheet  string   // custom stylesheet path; empty = use converter defaults
+	TitlePrefix string   // prefix prepended to page titles in <title> (e.g. "📜 ")
 }
 
 // PageData holds per-page data, mirroring the Jinja2 `page` object.
