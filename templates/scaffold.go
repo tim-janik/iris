@@ -17,6 +17,7 @@ package templates
 
 import (
 	"bytes"
+	"embed"
 	"fmt"
 	htmplt "html/template"
 	"log"
@@ -28,6 +29,9 @@ import (
 	txtplt "text/template"
 	"time"
 )
+
+//go:embed layout.html page.html post.html dirindex.html topindex.html rss2.xml atom.xml sitemap.xml
+var templateFS embed.FS
 
 // ---------------------------------------------------------------------------
 // Data structures
@@ -157,7 +161,6 @@ const (
 
 // Engine holds parsed templates and provides rendering methods.
 type Engine struct {
-	templateDir string
 	// HTML page templates use html/template for auto-escaping.
 	pageTmpl  *htmplt.Template
 	postTmpl  *htmplt.Template
@@ -169,7 +172,9 @@ type Engine struct {
 	siteTmpl  *txtplt.Template
 }
 
-// New creates a new Engine by parsing all Go templates from the given directory.
+// New creates a new Engine by parsing Go templates.
+// If templateDir is non-empty, templates are loaded from that directory
+// (overrides embedded templates). Otherwise, embedded templates are used.
 // Each page type is parsed into its own template set to isolate block overrides.
 //
 // HTML page templates use html/template (auto-escapes HTML content).
@@ -228,22 +233,27 @@ func New(templateDir string) (*Engine, error) {
 
 	// --- HTML page templates (html/template) ---
 	parseHTML := func(names ...string) (*htmplt.Template, error) {
-		paths := make([]string, 0, len(names))
-		for _, n := range names {
-			paths = append(paths, filepath.Join(templateDir, n))
+		if templateDir != "" {
+			paths := make([]string, 0, len(names))
+			for _, n := range names {
+				paths = append(paths, filepath.Join(templateDir, n))
+			}
+			return htmplt.New("").Funcs(htmlFuncs).ParseFiles(paths...)
 		}
-		return htmplt.New("").Funcs(htmlFuncs).ParseFiles(paths...)
+		return htmplt.New("").Funcs(htmlFuncs).ParseFS(templateFS, names...)
 	}
 
 	// --- XML feed templates (text/template) ---
 	parseXML := func(names ...string) (*txtplt.Template, error) {
-		paths := make([]string, 0, len(names))
-		for _, n := range names {
-			paths = append(paths, filepath.Join(templateDir, n))
+		if templateDir != "" {
+			paths := make([]string, 0, len(names))
+			for _, n := range names {
+				paths = append(paths, filepath.Join(templateDir, n))
+			}
+			return txtplt.New("").Funcs(txtFuncs).ParseFiles(paths...)
 		}
-		return txtplt.New("").Funcs(txtFuncs).ParseFiles(paths...)
+		return txtplt.New("").Funcs(txtFuncs).ParseFS(templateFS, names...)
 	}
-
 	var (
 		pageTmpl, postTmpl, dirTmpl, topTmpl *htmplt.Template
 		feedTmpl, siteTmpl                   *txtplt.Template
@@ -281,13 +291,12 @@ func New(templateDir string) (*Engine, error) {
 	}
 
 	return &Engine{
-		templateDir: templateDir,
-		pageTmpl:    pageTmpl,
-		postTmpl:    postTmpl,
-		dirTmpl:     dirTmpl,
-		topTmpl:     topTmpl,
-		feedTmpl:    feedTmpl,
-		siteTmpl:    siteTmpl,
+		pageTmpl: pageTmpl,
+		postTmpl: postTmpl,
+		dirTmpl:  dirTmpl,
+		topTmpl:  topTmpl,
+		feedTmpl: feedTmpl,
+		siteTmpl: siteTmpl,
 	}, nil
 }
 
@@ -491,8 +500,8 @@ func computeRelativeHref(currentDir, targetHref string) string {
 // ---------------------------------------------------------------------------
 
 func Example() {
-	// 1. Create the template engine
-	eng, err := New("_templates_go")
+	// 1. Create the template engine (uses embedded templates)
+	eng, err := New("")
 	if err != nil {
 		log.Fatalf("failed to create template engine: %v", err)
 	}
