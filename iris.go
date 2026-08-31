@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"runtime/debug"
 	"io"
 	"io/fs"
 	"log"
@@ -27,6 +28,7 @@ import (
 	"github.com/tim-janik/iris/htmlutil"
 	"github.com/tim-janik/iris/pageclass"
 	"github.com/tim-janik/iris/pandoc"
+	"github.com/tim-janik/iris/serve"
 	"github.com/tim-janik/iris/templates"
 	"go.yaml.in/yaml/v4"
 )
@@ -542,7 +544,7 @@ func renderPage(eng *templates.Engine, pg *InputPage, site templates.SiteConfig)
 	// Build footer updated text
 	footerUpdated := toString(pg.Front.Raw["footer_updated"])
 	if footerUpdated == "" {
-		footerUpdated = "Last updated " + pg.ModDate.UTC().Format("2006-01-02 15:04:05 UTC")
+		footerUpdated = "Last updated " + pg.ModDate.UTC().Format("2006-01-02")
 	}
 
 	// Use pandoc/asciidoctor-converted HTML for content
@@ -713,6 +715,54 @@ func parseInitArgs() string {
 	return *path
 }
 
+// ---------------------------------------------------------------------------
+// Serve subcommand — HTTP server for on-the-fly markdown rendering
+// ---------------------------------------------------------------------------
+
+// serveArgs holds the parsed serve command arguments.
+type serveArgs struct {
+	root string // directory containing markdown files
+	port int    // TCP port to listen on
+}
+
+// parseServeArgs parses command-line arguments for the serve subcommand.
+func parseServeArgs() serveArgs {
+	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	port := fs.Int("port", 9454, "TCP port to listen on (default: 9454)")
+	fs.Parse(os.Args[2:])
+
+	args := fs.Args()
+	if len(args) < 1 {
+		fmt.Fprintf(os.Stderr, "Usage: %s serve [flags] <path>\n", os.Args[0])
+		os.Exit(1)
+	}
+
+	root, _ := filepath.Abs(args[0])
+	return serveArgs{root: root, port: *port}
+}
+
+// serveMain is the main entry point for the serve subcommand.
+func serveMain() {
+	args := parseServeArgs()
+
+	if _, err := os.Stat(args.root); os.IsNotExist(err) {
+		log.Fatalf("root path does not exist: %s", args.root)
+	}
+
+	srv := &serve.Server{
+		Root:         args.root,
+		Port:         args.port,
+		PandocConfig: pandoc.DefaultConfig(),
+		AdocConfig:   adoc.DefaultConfig(),
+	}
+
+	if err := srv.Serve(); err != nil {
+		log.Fatalf("Server failed: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+
 // prepareOutputDir removes and recreates the output directory if requested.
 func prepareOutputDir(dir string, clear bool) {
 	if clear {
@@ -767,6 +817,10 @@ func main() {
 		initConfig(parseInitArgs())
 	case "ssg":
 		ssgMain()
+	case "serve":
+		serveMain()
+	case "version":
+		printVersion()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n", os.Args[1])
 		printUsage()
@@ -781,9 +835,37 @@ func printUsage() {
 Subcommands:
   init      Create _siteconfig.toml with default settings
   ssg       Build the site (convert, render, generate feeds/sitemap)
+  serve     Start an HTTP server that renders .md files to HTML on-the-fly
+  version   Print version and build information
 
 Run "iris <subcommand> -h" for more information on a subcommand.
+
+Examples:
+  iris serve ./docs --port 9454
+	Serves all .md files under ./docs as rendered HTML on localhost:9454
 `)
+}
+
+// printVersion prints version and VCS build information.
+func printVersion() {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		fmt.Println("iris (no build info)")
+		return
+	}
+	fmt.Printf("iris %s\n", info.Main.Version)
+	if info.Main.Sum != "" {
+		fmt.Printf("  module: %s %s\n", info.Main.Path, info.Main.Sum)
+	}
+	for _, dep := range info.Deps {
+		fmt.Printf("  %s %s\n", dep.Path, dep.Version)
+	}
+	if settings := info.Settings; len(settings) > 0 {
+		fmt.Println()
+		for _, s := range settings {
+			fmt.Printf("  %s=%s\n", s.Key, s.Value)
+		}
+	}
 }
 
 // ssgMain is the main entry point for the ssg subcommand.

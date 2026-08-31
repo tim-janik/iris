@@ -1,15 +1,17 @@
 package main
 
 import (
+	"html"
 	"strings"
 	"unicode"
 )
 
-// stripTags removes HTML tags from a string, returning plain text.
-func stripTags(html string) string {
+// stripTags removes HTML tags from a string and decodes HTML entities,
+// returning plain text suitable for use as an excerpt/teaser.
+func stripTags(input string) string {
 	var buf strings.Builder
 	inTag := false
-	for _, r := range html {
+	for _, r := range input {
 		if r == '<' {
 			inTag = true
 		} else if r == '>' {
@@ -24,6 +26,9 @@ func stripTags(html string) string {
 	}
 	// Collapse multiple spaces into one
 	result := strings.Join(strings.Fields(buf.String()), " ")
+	// Decode HTML entities (e.g. &#34; → ", &lt; → <) so the excerpt
+	// contains plain text that won't be double-escaped by the template engine.
+	result = html.UnescapeString(result)
 	return strings.TrimSpace(result)
 }
 
