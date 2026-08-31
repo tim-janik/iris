@@ -52,15 +52,6 @@ func Compile(pattern string) (*Pattern, error) {
 	return &Pattern{parts: parts}, nil
 }
 
-// MustCompile is like Compile but panics if the pattern is invalid.
-func MustCompile(pattern string) *Pattern {
-	p, err := Compile(pattern)
-	if err != nil {
-		panic(err)
-	}
-	return p
-}
-
 // Match reports whether path matches the compiled pattern.
 func (p *Pattern) Match(path string) bool {
 	segs := strings.Split(path, "/")
@@ -91,20 +82,6 @@ func matchParts(parts, segs []string) bool {
 	return err == nil && ok && matchParts(parts[1:], segs[1:])
 }
 
-// Glob expands the pattern against a list of candidate paths, returning all
-// matches in the order they appear in the input. Mirrors the POSIX glob(3)
-// result collection semantics. Returns an empty slice (never nil) when no
-// paths match.
-func (p *Pattern) Glob(paths []string) []string {
-	matches := make([]string, 0, len(paths))
-	for _, path := range paths {
-		if p.Match(path) {
-			matches = append(matches, path)
-		}
-	}
-	return matches
-}
-
 // String returns the original pattern string.
 func (p *Pattern) String() string {
 	return strings.Join(p.parts, "/")
@@ -113,32 +90,6 @@ func (p *Pattern) String() string {
 // ---------------------------------------------------------------------------
 // Convenience functions (no pre-compilation; for one-off use)
 // ---------------------------------------------------------------------------
-
-// Match matches a glob pattern against a path.
-// Both pattern and path use forward slashes as separators.
-//
-// The special segment "**" matches zero or more path segments.
-// All other segments use filepath.Match semantics (*, ?, [abc]).
-//
-// For repeated matching, use Compile() to pre-compile the pattern.
-func Match(pattern, path string) bool {
-	p, err := Compile(pattern)
-	if err != nil {
-		return false // malformed pattern → no match
-	}
-	return p.Match(path)
-}
-
-// MatchAny returns true if path matches any pattern in the list.
-// Returns false for nil or empty pattern lists.
-func MatchAny(patterns []string, path string) bool {
-	for _, p := range patterns {
-		if Match(p, path) {
-			return true
-		}
-	}
-	return false
-}
 
 // IsHidden returns true if any path segment starts with '.'.
 func IsHidden(path string) bool {
@@ -189,26 +140,6 @@ func (m *Matcher) Match(path string) bool {
 		}
 	}
 	return false
-}
-
-// Glob expands all compiled patterns against a list of candidate paths,
-// returning the union of matches (deduplicated, preserving input order).
-func (m *Matcher) Glob(paths []string) []string {
-	if m == nil {
-		return nil
-	}
-	seen := make(map[string]bool, len(paths))
-	var matches []string
-	for _, path := range paths {
-		if seen[path] {
-			continue
-		}
-		if m.Match(path) {
-			seen[path] = true
-			matches = append(matches, path)
-		}
-	}
-	return matches
 }
 
 // ---------------------------------------------------------------------------

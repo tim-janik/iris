@@ -2,7 +2,6 @@
 package globstar
 
 import (
-	"slices"
 	"testing"
 )
 
@@ -27,22 +26,6 @@ func TestCompile(t *testing.T) {
 	if err == nil {
 		t.Error("Compile(\"[invalid\") should return error")
 	}
-}
-
-func TestMustCompile(t *testing.T) {
-	// Valid pattern should not panic
-	p := MustCompile("*.md")
-	if p == nil {
-		t.Fatal("MustCompile returned nil")
-	}
-
-	// Invalid pattern should panic
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("MustCompile(\"[bad\") should panic")
-		}
-	}()
-	MustCompile("[bad")
 }
 
 func TestPatternString(t *testing.T) {
@@ -143,76 +126,9 @@ func TestPatternMatch(t *testing.T) {
 // Pattern.Glob
 // ---------------------------------------------------------------------------
 
-func TestPatternGlob(t *testing.T) {
-	paths := []string{
-		"readme.md",
-		"2025/post.md",
-		"2018/old/post.md",
-		"style.css",
-		"images/photo.jpg",
-		"docs/guide.md",
-		"_config.toml",
-		".gitignore",
-	}
-
-	tests := []struct {
-		pattern string
-		want    []string
-	}{
-		{"*.md", []string{"readme.md"}},
-		{"**/*.md", []string{"readme.md", "2025/post.md", "2018/old/post.md", "docs/guide.md"}},
-		{"20*/**", []string{"2025/post.md", "2018/old/post.md"}},
-		{"_*", []string{"_config.toml"}},
-		{"*.css", []string{"style.css"}},
-		{"nonexistent/**", []string{}},
-	}
-
-	for _, tt := range tests {
-		p, err := Compile(tt.pattern)
-		if err != nil {
-			t.Fatalf("Compile(%q): %v", tt.pattern, err)
-		}
-		got := p.Glob(paths)
-		if !slices.Equal(got, tt.want) {
-			t.Errorf("Pattern.Glob(%q) = %v, want %v", tt.pattern, got, tt.want)
-		}
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Convenience: MatchAny
 // ---------------------------------------------------------------------------
-
-func TestMatchAny(t *testing.T) {
-	patterns := []string{"*.md", "20*/**", ".htaccess"}
-
-	tests := []struct {
-		path string
-		want bool
-	}{
-		{"README.md", true},
-		{"2025/post.txt", true},
-		{".htaccess", true},
-		{"style.css", false},
-		{"images/photo.jpg", false},
-	}
-
-	for _, tt := range tests {
-		got := MatchAny(patterns, tt.path)
-		if got != tt.want {
-			t.Errorf("MatchAny(%v, %q) = %v, want %v", patterns, tt.path, got, tt.want)
-		}
-	}
-}
-
-func TestMatchAnyEmpty(t *testing.T) {
-	if MatchAny(nil, "anything") {
-		t.Error("MatchAny(nil, ...) should be false")
-	}
-	if MatchAny([]string{}, "anything") {
-		t.Error("MatchAny([], ...) should be false")
-	}
-}
 
 // ---------------------------------------------------------------------------
 // IsHidden
@@ -294,23 +210,6 @@ func TestMatcherMatch(t *testing.T) {
 	var nilM *Matcher
 	if nilM.Match("anything") {
 		t.Error("nil Matcher.Match should return false")
-	}
-}
-
-func TestMatcherGlob(t *testing.T) {
-	paths := []string{"readme.md", "2025/post.md", "style.css", "readme.md"} // duplicate
-	m, _ := NewMatcher([]string{"*.md", "20*/**"})
-
-	got := m.Glob(paths)
-	want := []string{"readme.md", "2025/post.md"}
-	if !slices.Equal(got, want) {
-		t.Errorf("Matcher.Glob() = %v, want %v (dedup + order)", got, want)
-	}
-
-	// nil matcher → nil
-	var nilM *Matcher
-	if nilM.Glob(paths) != nil {
-		t.Error("nil Matcher.Glob should return nil")
 	}
 }
 
@@ -408,14 +307,8 @@ func TestFilterExcludeOverridesInclude(t *testing.T) {
 // Performance: compiled vs uncompiled
 // ---------------------------------------------------------------------------
 
-func BenchmarkMatchConvenience(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		Match("20*/**/*.md", "2025/posts/hello.md")
-	}
-}
-
 func BenchmarkPatternMatch(b *testing.B) {
-	p := MustCompile("20*/**/*.md")
+	p, _ := Compile("20*/**/*.md")
 	for i := 0; i < b.N; i++ {
 		p.Match("2025/posts/hello.md")
 	}

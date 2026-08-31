@@ -223,8 +223,86 @@
     if (document.getElementById("iris-dashboard-style")) return;
     var style = document.createElement("style");
     style.id = "iris-dashboard-style";
-    style.textContent = ".dashboard-card-line{display:flex;gap:.45em;align-items:baseline}.dashboard-status{font-size:1.1em;color:#777}.dashboard-status--open{color:#668}.dashboard-status--in-progress,.dashboard-status--in_progress{color:#a76}.dashboard-status--done,.dashboard-status--complete{color:#686}.dashboard-metadata{display:flex;gap:.75em;color:#777;font-size:.9em}.dashboard-others{color:#777;font-style:italic}";
+    style.textContent = ".dashboard-card-line{display:flex;gap:.45em;align-items:baseline}.dashboard-status{font-size:1.1em;color:#777}.dashboard-status--open{color:#668}.dashboard-status--in-progress,.dashboard-status--in_progress{color:#a76}.dashboard-status--done,.dashboard-status--complete{color:#686}.dashboard-metadata{display:flex;gap:.75em;color:#777;font-size:.9em}.dashboard-others{color:#777;font-style:italic}" + ".dashboard-new fieldset{border:1px solid #ccc;border-radius:6px;margin:1em 0;padding:.75em 1em}.dashboard-new legend{font-weight:bold}.dashboard-new .dashboard-new-name{display:flex;align-items:baseline;gap:.4em}.dashboard-new .dashboard-new-suffix{color:#999}.dashboard-new .dashboard-new-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13em,1fr));gap:.6em 1.2em;margin:.6em 0}.dashboard-new label{display:flex;flex-direction:column;gap:.15em;font-size:.9em;color:#555}.dashboard-new input[type=text],.dashboard-new input[type=date],.dashboard-new select,.dashboard-new textarea{padding:.3em .4em;border:1px solid #ccc;border-radius:4px;font:inherit;color:#222}.dashboard-new textarea{width:100%;box-sizing:border-box}.dashboard-new button{margin-top:.6em;padding:.4em 1.1em}.dashboard-new .dashboard-new-status{color:#777;font-size:.9em;margin-left:.6em}.dashboard-new .dashboard-new-status.dashboard-error{color:#a33}";
     document.head.appendChild(style);
+  }
+
+  // --- create-file form widget (form.dashboard-new) ---
+  // The form posts the file contents (generated frontmatter + markdown body)
+  // to ./..~meta~?cmd=create-file and redirects to the clean HTML page on
+  // success, or shows the server's error message in place.
+
+  function stripMdSuffix(name) {
+    return name.replace(/\.md$/i, "");
+  }
+
+  function validFileName(name) {
+    return name.trim() !== "" && !/^\./.test(name) && !/[\\\/]/.test(name);
+  }
+
+  function buildContents(fields, body) {
+    var lines = [];
+    for (var key in fields) {
+      if (Object.prototype.hasOwnProperty.call(fields, key)) {
+        var value = String(fields[key]).trim();
+        if (value) lines.push(key + ": " + value);
+      }
+    }
+    if (!lines.length) return body;
+    return "---\n" + lines.join("\n") + "\n---\n\n" + body;
+  }
+
+  // Collects non-empty frontmatter fields from a form. Every form control
+  // with a name attribute is a candidate; the "name" and "contents" controls
+  // are excluded because they are handled separately.
+  function formFields(form) {
+    var fields = {};
+    Array.prototype.slice.call(form.elements).forEach(function (el) {
+      var key = el.getAttribute("name");
+      if (!key || key === "name" || key === "contents") return;
+      var value = String(el.value || "").trim();
+      if (value) fields[key] = value;
+    });
+    return fields;
+  }
+
+  function showFormStatus(status, message, isError) {
+    if (!status) return;
+    status.textContent = message;
+    status.className = "dashboard-new-status" + (isError ? " dashboard-error" : "");
+  }
+
+  function initCreateForm(form) {
+    var button = form.querySelector('button[type="submit"]');
+    var status = form.querySelector(".dashboard-new-status");
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var name = stripMdSuffix(String(form.elements["name"].value || "").trim());
+      if (!validFileName(name)) {
+        showFormStatus(status, "Invalid file name: no leading dot, no slashes.", true);
+        return;
+      }
+      var contents = buildContents(formFields(form), form.elements["contents"].value || "");
+      if (button) button.disabled = true;
+      showFormStatus(status, "Creating " + name + ".md \u2026");
+      fetch("./..~meta~?cmd=create-file&name=" + encodeURIComponent(name + ".md"), {
+        method: "POST",
+        headers: { "Accept": "application/json" },
+        body: contents
+      }).then(function (response) {
+        if (response.ok) {
+          window.location.assign("./" + encodeURIComponent(name));
+          return;
+        }
+        return response.text().then(function (message) {
+          showFormStatus(status, "Create failed: " + message, true);
+        });
+      }).catch(function (error) {
+        showFormStatus(status, "Create failed: " + error.message, true);
+      }).finally(function () {
+        if (button) button.disabled = false;
+      });
+    });
   }
 
   function loadAll(widgets) {
@@ -258,14 +336,22 @@
     filteredAndSorted: filteredAndSorted,
     limitedEntries: limitedEntries,
     parseDate: parseDate,
-    withDefaults: withDefaults
+    withDefaults: withDefaults,
+    stripMdSuffix: stripMdSuffix,
+    validFileName: validFileName,
+    buildContents: buildContents,
+    formFields: formFields
   };
   if (global) global.IrisDashboard = api;
 
   function start() {
     var widgets = Array.prototype.slice.call(document.querySelectorAll(".dashboard-widget"));
-    if (!widgets.length) return;
-    loadAll(widgets);
+    if (widgets.length) loadAll(widgets);
+    var forms = Array.prototype.slice.call(document.querySelectorAll("form.dashboard-new"));
+    if (forms.length) {
+      ensureStyles();
+      forms.forEach(initCreateForm);
+    }
   }
 
   if (typeof document !== "undefined") {
