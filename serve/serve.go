@@ -5,22 +5,30 @@
 package serve
 
 import (
+	_ "embed"
+	"encoding/json"
 	"fmt"
+	htmplt "html/template"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	htmplt "html/template"
 
 	"github.com/tim-janik/iris/adoc"
 	"github.com/tim-janik/iris/editlink"
+	"github.com/tim-janik/iris/frontmatter"
 	"github.com/tim-janik/iris/htmlutil"
 	"github.com/tim-janik/iris/mimetype"
 	"github.com/tim-janik/iris/pandoc"
 	"github.com/tim-janik/iris/templates"
-	"go.yaml.in/yaml/v4"
 )
+
+// dashboardScript is served from the special metadata route; it is never
+// written into the user's source tree or the SSG output directory.
+//
+//go:embed dashboard.js
+var dashboardScript []byte
 
 // Server holds configuration for the markdown HTTP server.
 type Server struct {
@@ -50,29 +58,14 @@ type Server struct {
 	Site templates.SiteConfig
 }
 
-// serveFrontmatter holds the minimal YAML frontmatter parsed for serve.
-type serveFrontmatter struct {
-	Title    string   `yaml:"title"`
-	Keywords []string `yaml:"keywords"`
-}
-
-// parseServeFrontmatter splits content into frontmatter and body.
-// Returns empty frontmatter if no YAML block is present.
-func parseServeFrontmatter(content []byte) (*serveFrontmatter, string) {
-	fm := &serveFrontmatter{}
-	text := string(content)
-	if !strings.HasPrefix(text, "---\n") {
-		return fm, text
+func hasMarkdownH1(body string) bool {
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "# ") || strings.HasPrefix(line, "#\t") {
+			return true
+		}
 	}
-	idx := strings.Index(text[4:], "\n---\n")
-	if idx == -1 {
-		idx = strings.Index(text[4:], "\n...\n")
-	}
-	if idx == -1 {
-		return fm, text
-	}
-	yaml.Unmarshal([]byte(text[4:4+idx]), fm)
-	return fm, strings.TrimLeft(text[4+idx+4:], "\n")
+	return false
 }
 
 // extractBodyAndTitle parses a full HTML document and returns the body's inner
@@ -110,6 +103,175 @@ func normalizePath(urlPath string) string {
 	return urlPath
 }
 
+// metadataRoute reports whether urlPath names the special per-directory route.
+func metadataRoute(urlPath string) bool {
+	return urlPath == "/..~meta~" || strings.HasSuffix(urlPath, "/..~meta~")
+}
+
+// resolveMetadataDir maps /foo/..~meta~ to a real directory under root. It
+// rejects traversal components and symlinks that resolve outside the root.
+func resolveMetadataDir(root, urlPath string) (string, error) {
+	const suffix = "/..~meta~"
+	if !metadataRoute(urlPath) {
+		return "", os.ErrNotExist
+	}
+	dirURL := strings.TrimSuffix(urlPath, suffix)
+	if dirURL == "" {
+		dirURL = "/"
+	}
+	for _, component := range strings.Split(strings.Trim(dirURL, "/"), "/") {
+		if component == ".." || component == "." || strings.ContainsRune(component, 0) {
+			return "", fmt.Errorf("invalid metadata path")
+		}
+	}
+
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	rootReal, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		return "", err
+	}
+	candidate := filepath.Join(rootReal, filepath.FromSlash(strings.TrimPrefix(dirURL, "/")))
+	dirReal, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(dirReal)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("metadata path is not a directory")
+	}
+	rel, err := filepath.Rel(rootReal, dirReal)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("metadata path escapes serve root")
+	}
+	return dirReal, nil
+}
+
+func writeNoCache(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store")
+}
+
+func serveDashboardAsset(w http.ResponseWriter, r *http.Request) {
+	writeNoCache(w)
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	if r.Method == http.MethodHead {
+		return
+	}
+	_, _ = w.Write(dashboardScript)
+}
+
+func serveMetadata(w http.ResponseWriter, r *http.Request, root, urlPath string) {
+	writeNoCache(w)
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	dir, err := resolveMetadataDir(root, urlPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "Not Found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Bad metadata path", http.StatusBadRequest)
+		}
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Internal Server Error: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	rootAbs, _ := filepath.Abs(root)
+	objects := make([]map[string]any, 0)
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || strings.HasPrefix(name, ".") || filepath.Ext(name) != ".md" {
+			continue
+		}
+		// ReadDir's regular-file check intentionally excludes symlinks. This
+		// keeps metadata enumeration from following an unexpected file link.
+		if !entry.Type().IsRegular() {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(dir, name))
+		if readErr != nil {
+			continue
+		}
+		fm, _ := frontmatter.Parse(data, name)
+		rel, relErr := filepath.Rel(rootAbs, filepath.Join(dir, name))
+		if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		cleanPath := "/" + strings.TrimSuffix(filepath.ToSlash(rel), filepath.Ext(rel))
+		keywords := fm.Keywords
+		if keywords == nil {
+			keywords = []string{}
+		}
+		authors := fm.Authors
+		if authors == nil {
+			authors = []string{}
+		}
+		record := map[string]any{
+			"title":       fm.Title,
+			"description": fm.Description,
+			"keywords":    keywords,
+			"published":   fm.Published,
+			"authors":     authors,
+			"url":         cleanPath,
+		}
+		for key, value := range fm.Raw {
+			if _, exists := record[key]; !exists {
+				record[key] = value
+			}
+		}
+		objects = append(objects, record)
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if r.Method == http.MethodHead {
+		return
+	}
+	if err := json.NewEncoder(w).Encode(objects); err != nil {
+		log.Printf("metadata response: %v", err)
+	}
+}
+
+func handleMetadataRoute(w http.ResponseWriter, r *http.Request, root string) bool {
+	if !metadataRoute(r.URL.Path) {
+		return false
+	}
+	writeNoCache(w)
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return true
+	}
+	query := r.URL.Query()
+	if query.Get("asset") != "" {
+		if query.Get("asset") != "dashboard.js" {
+			http.Error(w, "Unknown asset", http.StatusNotFound)
+			return true
+		}
+		serveDashboardAsset(w, r)
+		return true
+	}
+	if query.Get("cmd") != "get-frontmatter-array" {
+		if query.Get("cmd") == "" {
+			http.Error(w, "Missing metadata command", http.StatusBadRequest)
+		} else {
+			http.Error(w, "Unknown metadata command", http.StatusBadRequest)
+		}
+		return true
+	}
+	serveMetadata(w, r, root, r.URL.Path)
+	return true
+}
+
 // Serve starts the HTTP server and blocks until the server exits or errors.
 func (s *Server) Serve() error {
 	if s.PandocConfig.InputFormat == "" {
@@ -142,6 +304,10 @@ func (s *Server) Serve() error {
 	}
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if metadataRoute(r.URL.Path) {
+			handleMetadataRoute(w, r, s.Root)
+			return
+		}
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 			return
@@ -231,8 +397,14 @@ func (s *Server) Serve() error {
 			return
 		}
 
-		// Parse frontmatter for title
-		fm, _ := parseServeFrontmatter(data)
+		// Parse the shared frontmatter model. A synthesized title is passed to
+		// pandoc only when the markdown body has no H1; otherwise the existing
+		// H1 supplies the title and a command-line title would duplicate it.
+		fm, body := frontmatter.Parse(data, filepath.Base(absPath))
+		if fm.TitleSynthesized && hasMarkdownH1(body) {
+			fm.Title = ""
+			fm.TitleSynthesized = false
+		}
 
 		// Convert via pandoc or asciidoctor, extract full body (including <h1>)
 		var bodyContent string
@@ -246,7 +418,11 @@ func (s *Server) Serve() error {
 			}
 			bodyContent, convertedTitle = extractBodyAndTitle(htmlStr)
 		} else {
-			htmlStr, convErr := pandoc.Convert(cfg, data, "")
+			pandocTitle := ""
+			if fm.TitleSynthesized {
+				pandocTitle = fm.Title
+			}
+			htmlStr, convErr := pandoc.ConvertWithTitle(cfg, data, "", pandocTitle)
 			if convErr != nil {
 				log.Printf("[500] %s -> %s: %v", urlPath, absPath, convErr)
 				http.Error(w, fmt.Sprintf("Internal Server Error: %v", convErr), http.StatusInternalServerError)
@@ -266,8 +442,8 @@ func (s *Server) Serve() error {
 
 		// Render through serve.html template
 		serveData := templates.ServeData{
-			Site:  s.Site,
-			Title: title,
+			Site:    s.Site,
+			Title:   title,
 			Content: htmplt.HTML(bodyContent),
 		}
 		htmlBytes, err := eng.RenderServe(serveData)
