@@ -1,6 +1,11 @@
 {{/*
   rss2.xml - RSS 2.0 feed template.
   Uses text/template to preserve XML whitespace/indentation.
+  HTML content in <content:encoded> is XML-escaped via xmlEscape
+  instead of CDATA. Per RSS 2.0: "entity-encoded HTML is allowed"
+  (https://www.rssboard.org/rss-specification) and RSS Content Module
+  draft 2.0: "entity-encoded or CDATA-escaped version" of the content
+  (https://web.resource.org/rss/1.0/modules/content/).
 */}}
 
 {{- define "rss2"}}<?xml version="1.0" encoding="utf-8"?>
@@ -8,40 +13,40 @@
      xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <language>en</language>
-    <title>{{.Site.Title}}</title>
-    <description>{{.Site.Slogan}}</description>
-    <link>{{urlJoin .Site.URL ""}}</link>
-    <atom:link rel="self" type="application/rss+xml" href="{{.FeedURL}}"/>
+    <title>{{xmlEscape .Site.Title}}</title>
+    <description>{{xmlEscape .Site.Slogan}}</description>
+    <link>{{xmlEscape (urlJoin .Site.URL "")}}</link>
+    <atom:link rel="self" type="application/rss+xml" href="{{xmlEscape .FeedURL}}"/>
     <ttl>60</ttl>
 {{- range .Site.Authors}}
-    <dc:creator><![CDATA[{{.}}]]></dc:creator>
+    <dc:creator>{{xmlEscape .}}</dc:creator>
 {{- end}}
 {{- if .Site.Copyright}}
-    <copyright>{{.Site.Copyright}}</copyright>
+    <copyright>{{xmlEscape .Site.Copyright}}</copyright>
 {{- end}}
 {{- if or .Site.LogoHref .Site.IconHref}}
     <image>
-      <title>{{.Site.Title}}</title>
-      <url>{{urlJoin .Site.URL (or .Site.LogoHref .Site.IconHref)}}</url>
-      <link>{{urlJoin .Site.URL ""}}</link>
+      <title>{{xmlEscape .Site.Title}}</title>
+      <url>{{xmlEscape (urlJoin .Site.URL (or .Site.LogoHref .Site.IconHref))}}</url>
+      <link>{{xmlEscape (urlJoin .Site.URL "")}}</link>
     </image>
 {{- end}}
     <generator>Iris - https://github.com/tim-janik/iris/</generator>
 {{- range .Items}}
     <item>
-      <title>{{.Title}}</title>
-      <link>{{.URL}}</link>
-      <guid isPermaLink="true">{{.URL}}</guid>
+      <title>{{xmlEscape .Title}}</title>
+      <link>{{xmlEscape .URL}}</link>
+      <guid isPermaLink="true">{{xmlEscape .URL}}</guid>
       <pubDate>{{formatDate .PublishedDate "rfc822z"}}</pubDate>
-      <source url="{{$.FeedURL}}">{{.SiteTitle}}</source>
+      <source url="{{xmlEscape $.FeedURL}}">{{xmlEscape .SiteTitle}}</source>
 {{- range .Keywords}}
-      <category><![CDATA[{{.}}]]></category>
+      <category>{{xmlEscape .}}</category>
 {{- end}}
 {{- if or .Options.WithDescription (not .Options.WithContent)}}
-      <description>{{.Excerpt}}</description>
+      <description>{{xmlEscape .Excerpt}}</description>
 {{- end}}
 {{- if .Options.WithContent}}
-      <content:encoded><![CDATA[{{.FullContent}}]]></content:encoded>
+      <content:encoded>{{xmlEscape .FullContent}}</content:encoded>
 {{- end}}
     </item>
 {{- end}}

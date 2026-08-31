@@ -20,6 +20,7 @@ import (
 	"embed"
 	"fmt"
 	htmplt "html/template"
+	"html"
 	"log"
 	"os"
 	"path/filepath"
@@ -30,7 +31,7 @@ import (
 	"time"
 )
 
-//go:embed layout.html page.html post.html dirindex.html topindex.html rss2.xml atom.xml sitemap.xml
+//go:embed layout.html page.html post.html dirindex.html topindex.html rss2.xml atom.xml sitemap.xml serve.html
 var templateFS embed.FS
 
 // ---------------------------------------------------------------------------
@@ -51,6 +52,7 @@ type SiteConfig struct {
 	FeedAge     int      // site.feed_age (max age in days for RSS/Atom, -1 = unlimited)
 	TeaserLen   int      // site.teaser_len (excerpt length for feeds)
 	DescLen     int      // site.desc_len (excerpt length for directory listings)
+	Stylesheet  string   // custom stylesheet path; empty = use converter defaults
 }
 
 // PageData holds per-page data, mirroring the Jinja2 `page` object.
@@ -166,10 +168,20 @@ type Engine struct {
 	postTmpl  *htmplt.Template
 	dirTmpl   *htmplt.Template
 	topTmpl   *htmplt.Template
+	// Serve template - minimal skeleton for iris serve.
+	serveTmpl *htmplt.Template
 	// XML feed templates use text/template to avoid over-escaping
 	// of XML constructs like <?xml, <![CDATA[ etc.
 	feedTmpl  *txtplt.Template
 	siteTmpl  *txtplt.Template
+}
+
+// ServeData is the top-level data structure for serve.html rendering.
+type ServeData struct {
+	Site      SiteConfig
+	Title     string
+	Content   htmplt.HTML
+	BodyClass string
 }
 
 // New creates a new Engine by parsing Go templates.
@@ -183,9 +195,10 @@ func New(templateDir string) (*Engine, error) {
 	// Shared functions for both html and text templates.
 	sharedFuncs := htmplt.FuncMap{
 		"formatDate":  formatDate,
+		"xmlEscape":   xmlEscape,
 		"joinStrings": strings.Join,
 		"hasBodyClass": hasBodyClass,
-		"sliceFirstN": func(s []string, n int) []string {
+		"sliceFirstN": func(s []string, n int) []string{
 			if len(s) <= n {
 				return s
 			}
@@ -255,9 +268,9 @@ func New(templateDir string) (*Engine, error) {
 		return txtplt.New("").Funcs(txtFuncs).ParseFS(templateFS, names...)
 	}
 	var (
-		pageTmpl, postTmpl, dirTmpl, topTmpl *htmplt.Template
-		feedTmpl, siteTmpl                   *txtplt.Template
-		err                                  error
+		pageTmpl, postTmpl, dirTmpl, topTmpl, serveTmpl *htmplt.Template
+		feedTmpl, siteTmpl                              *txtplt.Template
+		err                                             error
 	)
 
 	pageTmpl, err = parseHTML("layout.html", "page.html")
@@ -290,13 +303,19 @@ func New(templateDir string) (*Engine, error) {
 		return nil, fmt.Errorf("parse sitemap templates: %w", err)
 	}
 
+	serveTmpl, err = parseHTML("serve.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse serve template: %w", err)
+	}
+
 	return &Engine{
 		pageTmpl: pageTmpl,
 		postTmpl: postTmpl,
 		dirTmpl:  dirTmpl,
 		topTmpl:  topTmpl,
-		feedTmpl: feedTmpl,
-		siteTmpl: siteTmpl,
+		feedTmpl:  feedTmpl,
+		siteTmpl:  siteTmpl,
+		serveTmpl: serveTmpl,
 	}, nil
 }
 
@@ -357,6 +376,14 @@ func (e *Engine) RenderSitemap(data SitemapData) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
+// RenderServe renders a page using the serve.html minimal skeleton.
+// Used by iris serve for on-the-fly rendering with proper <title> and optional stylesheet.
+func (e *Engine) RenderServe(data ServeData) ([]byte, error) {
+	var buf bytes.Buffer
+	err := e.serveTmpl.ExecuteTemplate(&buf, "serve", data)
+	return buf.Bytes(), err
+}
+
 // executeLayout executes the "layout" template with the given data.
 func executeLayout(tmpl *htmplt.Template, data TemplateData) ([]byte, error) {
 	var buf bytes.Buffer
@@ -367,6 +394,24 @@ func executeLayout(tmpl *htmplt.Template, data TemplateData) ([]byte, error) {
 // ---------------------------------------------------------------------------
 // Custom template functions
 // ---------------------------------------------------------------------------
+
+// xmlEscape escapes XML special characters in the input.
+// Accepts string, []byte, or any fmt.Stringer (e.g. htmplt.HTML).
+// Returns html.EscapeString output — safe for direct insertion into XML.
+// text/template does not re-escape plain string return values,
+// so there is no risk of double-escaping.
+func xmlEscape(v any) string {
+	switch s := v.(type) {
+	case string:
+		return html.EscapeString(s)
+	case []byte:
+		return html.EscapeString(string(s))
+	case fmt.Stringer:
+		return html.EscapeString(s.String())
+	default:
+		return html.EscapeString(fmt.Sprint(v))
+	}
+}
 
 // formatDate formats a time.Time value using one of several named formats.
 // Mirrors the Python datetime_format() from old/aux/util.py.

@@ -11,11 +11,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	htmplt "html/template"
 
 	"github.com/tim-janik/iris/adoc"
 	"github.com/tim-janik/iris/editlink"
+	"github.com/tim-janik/iris/htmlutil"
 	"github.com/tim-janik/iris/mimetype"
 	"github.com/tim-janik/iris/pandoc"
+	"github.com/tim-janik/iris/templates"
+	"go.yaml.in/yaml/v4"
 )
 
 // Server holds configuration for the markdown HTTP server.
@@ -38,6 +42,55 @@ type Server struct {
 	// Example:
 	//   gnome-terminal -- $EDITOR +%u %s
 	EditLinkCmd string
+	// TemplateDir is a custom template directory (overrides embedded templates).
+	TemplateDir string
+	// Site holds site-level configuration (title, slogan, stylesheet, etc.).
+	Site templates.SiteConfig
+}
+
+// serveFrontmatter holds the minimal YAML frontmatter parsed for serve.
+type serveFrontmatter struct {
+	Title    string   `yaml:"title"`
+	Keywords []string `yaml:"keywords"`
+}
+
+// parseServeFrontmatter splits content into frontmatter and body.
+// Returns empty frontmatter if no YAML block is present.
+func parseServeFrontmatter(content []byte) (*serveFrontmatter, string) {
+	fm := &serveFrontmatter{}
+	text := string(content)
+	if !strings.HasPrefix(text, "---\n") {
+		return fm, text
+	}
+	idx := strings.Index(text[4:], "\n---\n")
+	if idx == -1 {
+		idx = strings.Index(text[4:], "\n...\n")
+	}
+	if idx == -1 {
+		return fm, text
+	}
+	yaml.Unmarshal([]byte(text[4:4+idx]), fm)
+	return fm, strings.TrimLeft(text[4+idx+4:], "\n")
+}
+
+// extractBodyAndTitle parses a full HTML document and returns the body's inner
+// HTML (including any <h1>) and the page title (from <title> or first <h1>).
+func extractBodyAndTitle(htmlStr string) (string, string) {
+	doc, err := htmlutil.Parse(htmlStr)
+	if err != nil {
+		return htmlStr, ""
+	}
+	title := htmlutil.Text(htmlutil.FindByTag(doc, "title"))
+	body := htmlutil.FindByTag(doc, "body")
+	if body == nil {
+		return htmlStr, title
+	}
+	if title == "" {
+		if h1 := htmlutil.FindByTag(body, "h1"); h1 != nil {
+			title = htmlutil.Text(h1)
+		}
+	}
+	return strings.TrimSpace(htmlutil.InnerHTML(body)), title
 }
 
 // normalizePath ensures the URL path starts with a slash.
@@ -57,6 +110,11 @@ func (s *Server) Serve() error {
 		s.AdocConfig = adoc.DefaultConfig()
 	}
 
+	eng, err := templates.New(s.TemplateDir)
+	if err != nil {
+		return fmt.Errorf("init templates: %w", err)
+	}
+
 	cfg := s.PandocConfig
 
 	mux := http.NewServeMux()
@@ -68,22 +126,11 @@ func (s *Server) Serve() error {
 
 		urlPath := normalizePath(r.URL.Path)
 
-		// If path ends with .md or .adoc, redirect to extensionless URL
-		for _, ext := range []string{".md", ".adoc"} {
-			if strings.HasSuffix(urlPath, ext) {
-				cleanPath := strings.TrimSuffix(urlPath, ext)
-				absPath := filepath.Join(s.Root, urlPath)
-				if _, err := os.Stat(absPath); err == nil {
-					log.Printf("[301] %s -> %s", urlPath, cleanPath)
-					http.Redirect(w, r, cleanPath, http.StatusMovedPermanently)
-					return
-				}
-			}
-		}
-
-		// Try the path as-is first, then append .md, then .adoc
+		// Try the path as-is first, then append .md, then .adoc.
+		// convertToHTML is true only when we found the file by appending an extension
+		// (i.e. the user requested /foo/bar and we resolved it to /foo/bar.md).
 		var absPath string
-		var found bool
+		var found, convertToHTML bool
 		if info, err := os.Stat(filepath.Join(s.Root, urlPath)); err == nil && !info.IsDir() {
 			absPath = filepath.Join(s.Root, urlPath)
 			found = true
@@ -93,6 +140,7 @@ func (s *Server) Serve() error {
 				if _, err := os.Stat(filepath.Join(s.Root, candidate)); err == nil {
 					absPath = filepath.Join(s.Root, candidate)
 					found = true
+					convertToHTML = true
 					break
 				}
 			}
@@ -106,8 +154,9 @@ func (s *Server) Serve() error {
 
 		ext := strings.ToLower(filepath.Ext(absPath))
 
-		// .md and .adoc are converted; known MIME-type extensions are pass-through; everything else is 404.
-		if ext != ".md" && ext != ".adoc" {
+		// If resolved by extension lookup, convert .md/.adoc to HTML.
+		// Otherwise treat as a regular file (passthrough or 404).
+		if !convertToHTML {
 			if !mimetype.IsPassthrough(ext) {
 				log.Printf("[404] %s (unsupported type)", urlPath)
 				http.Error(w, fmt.Sprintf("Not Found: %s", urlPath), http.StatusNotFound)
@@ -139,14 +188,45 @@ func (s *Server) Serve() error {
 			return
 		}
 
-		var html string
+		// Parse frontmatter for title
+		fm, _ := parseServeFrontmatter(data)
+
+		// Convert via pandoc or asciidoctor, extract full body (including <h1>)
+		var bodyContent string
+		var convertedTitle string
 		if strings.HasSuffix(absPath, ".adoc") {
-			html, err = adoc.Convert(s.AdocConfig, data)
+			htmlStr, convErr := adoc.Convert(s.AdocConfig, data)
+			if convErr != nil {
+				log.Printf("[500] %s -> %s: %v", urlPath, absPath, convErr)
+				http.Error(w, fmt.Sprintf("Internal Server Error: %v", convErr), http.StatusInternalServerError)
+				return
+			}
+			bodyContent, convertedTitle = extractBodyAndTitle(htmlStr)
 		} else {
-			html, err = pandoc.Convert(cfg, data, "")
+			htmlStr, convErr := pandoc.Convert(cfg, data, "")
+			if convErr != nil {
+				log.Printf("[500] %s -> %s: %v", urlPath, absPath, convErr)
+				http.Error(w, fmt.Sprintf("Internal Server Error: %v", convErr), http.StatusInternalServerError)
+				return
+			}
+			bodyContent, convertedTitle = extractBodyAndTitle(htmlStr)
 		}
+
+		// Resolve title: frontmatter > converter-extracted title
+		title := fm.Title
+		if title == "" {
+			title = convertedTitle
+		}
+
+		// Render through serve.html template
+		serveData := templates.ServeData{
+			Site:  s.Site,
+			Title: title,
+			Content: htmplt.HTML(bodyContent),
+		}
+		htmlBytes, err := eng.RenderServe(serveData)
 		if err != nil {
-			log.Printf("[500] %s -> %s: %v", urlPath, absPath, err)
+			log.Printf("[500] %s -> %s: render error: %v", urlPath, absPath, err)
 			http.Error(w, fmt.Sprintf("Internal Server Error: %v", err), http.StatusInternalServerError)
 			return
 		}
@@ -154,7 +234,7 @@ func (s *Server) Serve() error {
 		log.Printf("[200] %s -> %s", urlPath, absPath)
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(html))
+		w.Write(htmlBytes)
 	})
 
 	handler := http.Handler(mux)

@@ -12,6 +12,18 @@ import (
 	"golang.org/x/net/html"
 )
 
+// stripQuotes removes straight, curly, and smart quote characters.
+// Pandoc renders "text" as <q>text</q>, so quotes vanish from HTML text content.
+func stripQuotes(s string) string {
+	s = strings.ReplaceAll(s, "\"", "")
+	s = strings.ReplaceAll(s, "'", "")
+	s = strings.ReplaceAll(s, "\u201c", "") // "
+	s = strings.ReplaceAll(s, "\u201d", "") // "
+	s = strings.ReplaceAll(s, "\u2018", "") // '
+	s = strings.ReplaceAll(s, "\u2019", "") // '
+	return s
+}
+
 // FindHeadingLine returns the 1-based line number of headingText in srcPath.
 // occurrence is 0-indexed: 0 = first match, 1 = second match, etc.
 //
@@ -45,7 +57,9 @@ func FindHeadingLine(srcPath string, headingText string, occurrence int) (int, e
 			continue
 		}
 		stripped := strings.TrimLeft(trimmed, markerStr+" ")
-		if strings.EqualFold(stripped, headingText) {
+		// Pandoc renders "text" as <q>text</q>, so quotes disappear from HTML text.
+		// Compare with all quote variants stripped from both sides.
+		if strings.EqualFold(stripQuotes(stripped), stripQuotes(headingText)) {
 			if matchCount == occurrence {
 				return i + 1, nil
 			}
