@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/tim-janik/iris/adoc"
+	"github.com/tim-janik/iris/editlink"
+	"github.com/tim-janik/iris/mimetype"
 	"github.com/tim-janik/iris/pandoc"
 )
 
@@ -26,6 +28,16 @@ type Server struct {
 	PandocConfig pandoc.Config
 	// AdocConfig controls asciidoctor invocation; zero value uses defaults.
 	AdocConfig adoc.Config
+	// EditLinkCmd is the command template for opening source files in an editor.
+	// If empty, edit links are disabled.
+	//
+	// Supported placeholders:
+	//   %s — source file path
+	//   %u — line number (substituted only if present in template)
+	//
+	// Example:
+	//   gnome-terminal -- $EDITOR +%u %s
+	EditLinkCmd string
 }
 
 // normalizePath ensures the URL path starts with a slash.
@@ -92,6 +104,34 @@ func (s *Server) Serve() error {
 			return
 		}
 
+		ext := strings.ToLower(filepath.Ext(absPath))
+
+		// .md and .adoc are converted; known MIME-type extensions are pass-through; everything else is 404.
+		if ext != ".md" && ext != ".adoc" {
+			if !mimetype.IsPassthrough(ext) {
+				log.Printf("[404] %s (unsupported type)", urlPath)
+				http.Error(w, fmt.Sprintf("Not Found: %s", urlPath), http.StatusNotFound)
+				return
+			}
+			log.Printf("[200] %s -> %s (passthrough)", urlPath, absPath)
+			w.Header().Set("Content-Type", mimetype.Lookup(ext))
+			f, err := os.Open(absPath)
+			if err != nil {
+				log.Printf("[500] %s: open error: %v", absPath, err)
+				http.Error(w, fmt.Sprintf("Internal Server Error: %v", err), http.StatusInternalServerError)
+				return
+			}
+			defer f.Close()
+			info, err := f.Stat()
+			if err != nil {
+				log.Printf("[500] %s: stat error: %v", absPath, err)
+				http.Error(w, fmt.Sprintf("Internal Server Error: %v", err), http.StatusInternalServerError)
+				return
+			}
+			http.ServeContent(w, r, info.Name(), info.ModTime(), f)
+			return
+		}
+
 		data, err := os.ReadFile(absPath)
 		if err != nil {
 			log.Printf("[500] %s: read error: %v", absPath, err)
@@ -117,8 +157,13 @@ func (s *Server) Serve() error {
 		w.Write([]byte(html))
 	})
 
+	handler := http.Handler(mux)
+	if s.EditLinkCmd != "" {
+		handler = editlink.Handler(editlink.Config{Cmd: s.EditLinkCmd}, mux, s.Root)
+	}
+
 	addr := fmt.Sprintf(":%d", s.Port)
 	log.Printf("Serve running at http://localhost%s/", addr)
 	log.Printf("Root: %s", s.Root)
-	return http.ListenAndServe(addr, mux)
+	return http.ListenAndServe(addr, handler)
 }
