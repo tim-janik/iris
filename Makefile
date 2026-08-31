@@ -20,8 +20,8 @@ bench: ## Run all benchmarks
 .PHONY: bench
 
 # == build ==
-build: ## Build all packages
-	go build .
+build: ## Build a portable binary
+	CGO_ENABLED=0 go build -trimpath # -buildvcs=true -ldflags="-s -w" .
 .PHONY: build
 
 # == clean ==
