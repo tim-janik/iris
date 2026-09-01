@@ -70,7 +70,18 @@ func loadSiteConfig(inputDir, configFile string) SiteConfig {
 	_, err := toml.DecodeFile(configFile, &site)
 	if err != nil {
 		log.Printf("failed to read config %s, using defaults: %v", configFile, err)
-		return site
+		return defaultSiteConfig()
+	}
+	// Excerpt lengths must be positive; negative values would truncate to
+	// empty output, so fall back to the defaults instead.
+	def := defaultSiteConfig()
+	if site.TeaserLen < 0 {
+		log.Printf("config %s: teaser_len %d is negative, using default %d", configFile, site.TeaserLen, def.TeaserLen)
+		site.TeaserLen = def.TeaserLen
+	}
+	if site.DescLen < 0 {
+		log.Printf("config %s: desc_len %d is negative, using default %d", configFile, site.DescLen, def.DescLen)
+		site.DescLen = def.DescLen
 	}
 	log.Printf("loaded site config from %s", configFile)
 	return site
