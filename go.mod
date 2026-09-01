@@ -7,3 +7,5 @@ require (
 	go.yaml.in/yaml/v4 v4.0.0-rc.4
 	golang.org/x/net v0.54.0
 )
+
+require golang.org/x/sync v0.22.0

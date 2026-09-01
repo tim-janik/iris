@@ -156,7 +156,7 @@ func decodePart(data []byte, encoding string) string {
 		if err == nil {
 			data = decoded
 		}
-	// "7bit", "8bit" or empty: no decoding needed
+		// "7bit", "8bit" or empty: no decoding needed
 	}
 
 	result := strings.ReplaceAll(string(data), "\r\n", "\n")
@@ -196,7 +196,7 @@ func matchRecipient(msg *mail.Message, luidToRecipient map[string]string) string
 			}
 			luidPart := local[plusIdx+len("newcomment+"):]
 			for email, luid := range luidToRecipient {
-				if strings.Contains(email, "+" + luidPart + "@") {
+				if strings.Contains(email, "+"+luidPart+"@") {
 					return luid
 				}
 			}

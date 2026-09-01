@@ -19,7 +19,6 @@ import (
 	"github.com/tim-janik/iris/adoc"
 	"github.com/tim-janik/iris/editlink"
 	"github.com/tim-janik/iris/frontmatter"
-	"github.com/tim-janik/iris/htmlutil"
 	"github.com/tim-janik/iris/mimetype"
 	"github.com/tim-janik/iris/pandoc"
 	"github.com/tim-janik/iris/templates"
@@ -72,33 +71,6 @@ type Server struct {
 	FaviconPath string
 	// Site holds site-level configuration (title, slogan, stylesheet, etc.).
 	Site templates.SiteConfig
-}
-
-// extractBodyAndTitle parses a full HTML document and returns the body's inner
-// HTML (including any <h1>) and the page title.
-// Title resolution mirrors pandoc.extractTitle: <h1> takes priority over <title>.
-// Pandoc emits <title>-</title> as a placeholder when no metadata title is set;
-// treat that as empty so the caller can fall back to the filename.
-func extractBodyAndTitle(htmlStr string) (string, string) {
-	doc, err := htmlutil.Parse(htmlStr)
-	if err != nil {
-		return htmlStr, ""
-	}
-	body := htmlutil.FindByTag(doc, "body")
-	if body == nil {
-		return htmlStr, ""
-	}
-	// <h1> first (matches pandoc.extractTitle), then <title>, then empty
-	var title string
-	if h1 := htmlutil.FindByTag(body, "h1"); h1 != nil {
-		title = htmlutil.Text(h1)
-	} else if t := htmlutil.FindByTag(doc, "title"); t != nil {
-		title = htmlutil.Text(t)
-	}
-	if title == "-" {
-		title = ""
-	}
-	return strings.TrimSpace(htmlutil.InnerHTML(body)), title
 }
 
 // normalizePath ensures the URL path starts with a slash.
@@ -515,7 +487,7 @@ func (s *Server) Serve() error {
 				http.Error(w, fmt.Sprintf("Internal Server Error: %v", convErr), http.StatusInternalServerError)
 				return
 			}
-			bodyContent, convertedTitle = extractBodyAndTitle(htmlStr)
+			bodyContent, convertedTitle = pandoc.ExtractBodyAndTitle(htmlStr)
 		} else {
 			pandocTitle := ""
 			if fm.TitleSynthesized {
@@ -527,7 +499,7 @@ func (s *Server) Serve() error {
 				http.Error(w, fmt.Sprintf("Internal Server Error: %v", convErr), http.StatusInternalServerError)
 				return
 			}
-			bodyContent, convertedTitle = extractBodyAndTitle(htmlStr)
+			bodyContent, convertedTitle = pandoc.ExtractBodyAndTitle(htmlStr)
 		}
 
 		// Resolve title: frontmatter > h1 from converter > filename (with extension)

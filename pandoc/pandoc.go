@@ -108,13 +108,35 @@ func ConvertAndDisassembleWithTitle(cfg Config, data []byte, inputFormat, title 
 	return r, nil
 }
 
+// ExtractBodyAndTitle parses a full HTML document and returns the body's
+// inner HTML (including any <h1>) and the page title: the first <h1> wins,
+// falling back to <title>; pandoc's "-" title placeholder counts as empty.
+// Shared by iris serve (which renders the body with its <h1> intact).
+func ExtractBodyAndTitle(htmlStr string) (body, title string) {
+	doc, err := htmlutil.Parse(htmlStr)
+	if err != nil {
+		return htmlStr, ""
+	}
+	body = strings.TrimSpace(htmlutil.InnerHTML(bodyNode(doc)))
+	title = extractTitle(doc)
+	if title == "-" {
+		title = ""
+	}
+	return body, title
+}
+
+// bodyNode returns the <body> element, or the document root when absent
+// (pandoc fragment output).
+func bodyNode(doc *html.Node) *html.Node {
+	if body := htmlutil.FindByTag(doc, "body"); body != nil {
+		return body
+	}
+	return doc
+}
+
 // extractTitle returns text from first <h1> in body, fallback to <title>.
 func extractTitle(doc *html.Node) string {
-	body := htmlutil.FindByTag(doc, "body")
-	if body == nil {
-		body = doc
-	}
-	if h1 := htmlutil.FindByTag(body, "h1"); h1 != nil {
+	if h1 := htmlutil.FindByTag(bodyNode(doc), "h1"); h1 != nil {
 		return htmlutil.Text(h1)
 	}
 	if title := htmlutil.FindByTag(doc, "title"); title != nil {
@@ -125,11 +147,7 @@ func extractTitle(doc *html.Node) string {
 
 // extractFirstH1 returns the full <h1> HTML element string.
 func extractFirstH1(doc *html.Node) string {
-	body := htmlutil.FindByTag(doc, "body")
-	if body == nil {
-		body = doc
-	}
-	h1 := htmlutil.FindByTag(body, "h1")
+	h1 := htmlutil.FindByTag(bodyNode(doc), "h1")
 	if h1 == nil {
 		return ""
 	}
@@ -138,16 +156,11 @@ func extractFirstH1(doc *html.Node) string {
 
 // extractBodyWithoutFirstH1 extracts body content and removes the first <h1>.
 func extractBodyWithoutFirstH1(doc *html.Node) string {
-	body := htmlutil.FindByTag(doc, "body")
-	if body == nil {
-		// No body tag — pandoc fragment output, use entire document
-		body = doc
-	}
 	// Remove first <h1>
-	if h1 := htmlutil.FindByTag(body, "h1"); h1 != nil {
+	if h1 := htmlutil.FindByTag(bodyNode(doc), "h1"); h1 != nil {
 		htmlutil.Remove(h1)
 	}
-	return strings.TrimSpace(htmlutil.InnerHTML(body))
+	return strings.TrimSpace(htmlutil.InnerHTML(bodyNode(doc)))
 }
 
 // extractKeywords returns keywords from <meta name="keywords">.
