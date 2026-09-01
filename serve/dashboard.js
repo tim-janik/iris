@@ -223,7 +223,7 @@
     if (document.getElementById("iris-dashboard-style")) return;
     var style = document.createElement("style");
     style.id = "iris-dashboard-style";
-    style.textContent = ".dashboard-card-line{display:flex;gap:.45em;align-items:baseline}.dashboard-status{font-size:1.1em;color:#777}.dashboard-status--open{color:#668}.dashboard-status--in-progress,.dashboard-status--in_progress{color:#a76}.dashboard-status--done,.dashboard-status--complete{color:#686}.dashboard-metadata{display:flex;gap:.75em;color:#777;font-size:.9em}.dashboard-others{color:#777;font-style:italic}" + ".dashboard-new fieldset{border:1px solid #ccc;border-radius:6px;margin:1em 0;padding:.75em 1em}.dashboard-new legend{font-weight:bold}.dashboard-new .dashboard-new-name{display:flex;align-items:baseline;gap:.4em}.dashboard-new .dashboard-new-suffix{color:#999}.dashboard-new .dashboard-new-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13em,1fr));gap:.6em 1.2em;margin:.6em 0}.dashboard-new label{display:flex;flex-direction:column;gap:.15em;font-size:.9em;color:#555}.dashboard-new input[type=text],.dashboard-new input[type=date],.dashboard-new select,.dashboard-new textarea{padding:.3em .4em;border:1px solid #ccc;border-radius:4px;font:inherit;color:#222}.dashboard-new textarea{width:100%;box-sizing:border-box}.dashboard-new button{margin-top:.6em;padding:.4em 1.1em}.dashboard-new .dashboard-new-status{color:#777;font-size:.9em;margin-left:.6em}.dashboard-new .dashboard-new-status.dashboard-error{color:#a33}";
+    style.textContent = ".dashboard-card-line{display:flex;gap:.45em;align-items:baseline}.dashboard-status{font-size:1.1em;color:#777}.dashboard-status--open{color:#668}.dashboard-status--in-progress,.dashboard-status--in_progress{color:#a76}.dashboard-status--done,.dashboard-status--complete{color:#686}.dashboard-metadata{display:flex;gap:.75em;color:#777;font-size:.9em}.dashboard-others{color:#777;font-style:italic}" + ".dashboard-new fieldset{border:1px solid #ccc;border-radius:6px;margin:1em 0;padding:.75em 1em}.dashboard-new legend{font-weight:bold}.dashboard-new .dashboard-new-name{display:flex;align-items:baseline;gap:.4em}.dashboard-new .dashboard-new-suffix{color:#999}.dashboard-new .dashboard-new-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13em,1fr));gap:.6em 1.2em;margin:1em 0}.dashboard-new label{display:flex;flex-direction:column;gap:.15em;font-size:.9em;color:#555}.dashboard-new input[type=text],.dashboard-new input[type=date],.dashboard-new select,.dashboard-new textarea{padding:.3em .4em;border:1px solid #ccc;border-radius:4px;font:inherit;color:#222}.dashboard-new textarea{width:100%;box-sizing:border-box}.dashboard-new button{margin-top:.6em;padding:.4em 1.1em}.dashboard-new .dashboard-new-status{color:#777;font-size:.9em;margin-left:.6em}.dashboard-new .dashboard-new-status.dashboard-error{color:#a33}";
     document.head.appendChild(style);
   }
 
@@ -240,16 +240,67 @@
     return name.trim() !== "" && !/^\./.test(name) && !/[\\\/]/.test(name);
   }
 
-  function buildContents(fields, body) {
-    var lines = [];
-    for (var key in fields) {
-      if (Object.prototype.hasOwnProperty.call(fields, key)) {
-        var value = String(fields[key]).trim();
-        if (value) lines.push(key + ": " + value);
-      }
+  // Splits a leading frontmatter block (--- ... --- or ... ) from the rest
+  // of a document. Returns null when the text has no complete frontmatter
+  // block, matching the shared parser's behavior for incomplete blocks.
+  function splitFrontmatter(text) {
+    var lines = String(text || "").split("\n");
+    if (!lines.length) return null;
+    var first = lines[0];
+    if (first.charCodeAt(0) === 0xFEFF) first = first.slice(1);
+    if (first.trim() !== "---") return null;
+    var end = -1;
+    for (var i = 1; i < lines.length; i++) {
+      var trimmed = lines[i].trim();
+      if (trimmed === "---" || trimmed === "...") { end = i; break; }
     }
-    if (!lines.length) return body;
-    return "---\n" + lines.join("\n") + "\n---\n\n" + body;
+    if (end < 0) return null;
+    return { fm: lines.slice(1, end), terminator: lines[end], rest: lines.slice(end + 1) };
+  }
+
+  // Top-level keys of a frontmatter block: simple "key: value" lines at
+  // column 0, lower-cased. Indented lines (nested maps, list items) and
+  // lines without a colon are ignored.
+  function frontmatterKeys(fmLines) {
+    var keys = {};
+    fmLines.forEach(function (line) {
+      var match = /^([A-Za-z_][A-Za-z0-9_-]*)\s*:/.exec(line);
+      if (match) keys[match[1].toLowerCase()] = true;
+    });
+    return keys;
+  }
+
+  // Builds the file contents from form fields and the markdown body. When the
+  // body already starts with a complete frontmatter block, the form fields are
+  // merged into it: fields whose key already exists (compared case-
+  // insensitively) are left untouched so user-typed frontmatter takes
+  // precedence, all other form fields are appended before the terminator, and
+  // the rest of the document is preserved verbatim. Without frontmatter, a
+  // block is built from the fields as before.
+  function buildContents(fields, body) {
+    var extraLines = [];
+    for (var key in fields) {
+      if (!Object.prototype.hasOwnProperty.call(fields, key)) continue;
+      var value = String(fields[key]).trim();
+      if (value) extraLines.push(key + ": " + value);
+    }
+    var parsed = splitFrontmatter(body);
+    if (parsed) {
+      var taken = frontmatterKeys(parsed.fm);
+      var added = extraLines.filter(function (line) {
+        var key = line.slice(0, line.indexOf(":")).toLowerCase();
+        return !taken[key];
+      });
+      var fmParts = [];
+      if (parsed.fm.length) fmParts.push(parsed.fm.join("\n"));
+      if (added.length) fmParts.push(added.join("\n"));
+      var joined = fmParts.join("\n");
+      var rebuilt = "---\n" + (joined ? joined + "\n" : "") + parsed.terminator;
+      var rest = parsed.rest.join("\n");
+      return rest ? rebuilt + "\n" + rest : rebuilt;
+    }
+    if (!extraLines.length) return String(body || "");
+    return "---\n" + extraLines.join("\n") + "\n---\n\n" + body;
   }
 
   // Collects non-empty frontmatter fields from a form. Every form control
@@ -272,7 +323,27 @@
     status.className = "dashboard-new-status" + (isError ? " dashboard-error" : "");
   }
 
+  // Tomorrow's date (local time) as YYYY-MM-DD, used for the "now+1day"
+  // default deadline. <input type="date"> requires a concrete date value.
+  function defaultDeadline() {
+    var now = new Date();
+    now.setDate(now.getDate() + 1);
+    var month = String(now.getMonth() + 1);
+    var day = String(now.getDate());
+    return now.getFullYear() + "-" + (month.length < 2 ? "0" + month : month) + "-" + (day.length < 2 ? "0" + day : day);
+  }
+
+  // Fills empty form controls that carry a data-default attribute, so freshly
+  // opened forms come pre-filled with sensible values.
+  function applyFormDefaults(form) {
+    Array.prototype.slice.call(form.querySelectorAll("[data-default]")).forEach(function (el) {
+      if (el.value) return;
+      if (el.getAttribute("data-default") === "now+1day") el.value = defaultDeadline();
+    });
+  }
+
   function initCreateForm(form) {
+    applyFormDefaults(form);
     var button = form.querySelector('button[type="submit"]');
     var status = form.querySelector(".dashboard-new-status");
     form.addEventListener("submit", function (event) {
@@ -340,7 +411,9 @@
     stripMdSuffix: stripMdSuffix,
     validFileName: validFileName,
     buildContents: buildContents,
-    formFields: formFields
+    splitFrontmatter: splitFrontmatter,
+    formFields: formFields,
+    defaultDeadline: defaultDeadline
   };
   if (global) global.IrisDashboard = api;
 
