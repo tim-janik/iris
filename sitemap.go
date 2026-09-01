@@ -4,6 +4,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,7 +21,10 @@ func generateDirIndices(eng *templates.Engine, pages []*InputPage, siteGo templa
 	var sitemapEntries []templates.SitemapEntry
 	dirs := findDirs(pages)
 	for _, dir := range dirs {
-		indexPath := dir + "/index.html"
+		// filepath.Join normalizes "./index.html" to "index.html" so the skip
+		// check below matches the root page's OutputPath and the auto dirindex
+		// never overwrites a rendered root index.
+		indexPath := filepath.Join(dir, "index.html")
 
 		// Skip if already rendered as a page
 		if slices.ContainsFunc(pages, func(pg *InputPage) bool { return pg.OutputPath == indexPath }) {
@@ -29,10 +33,15 @@ func generateDirIndices(eng *templates.Engine, pages []*InputPage, siteGo templa
 
 		dirName, depth, root := computePathInfoForDir(dir)
 
-		// Collect posts in this directory
+		// Collect posts in this directory. The root dirindex lists all posts;
+		// subdirectory dirindices list only posts that live in exactly that
+		// directory (not in descendant directories).
 		var feedItems []templates.FeedItem
 		for _, pg := range pages {
-			if !pg.Type.IsPost() || !strings.HasPrefix(pg.DirName, dirName) {
+			if !pg.Type.IsPost() {
+				continue
+			}
+			if dir != "." && pg.DirName != dirName {
 				continue
 			}
 			// D3: compute LinkHref relative to this dirindex directory
@@ -192,19 +201,24 @@ func calcChangefreqForDate(modDate time.Time, loc string, now time.Time) string 
 }
 
 // specialScore rates a URL between -10 and +10 for priority calculation.
-// Mirrors Python Page._special_score().
+// Mirrors Python Page._special_score(). Callers pass absolute loc URLs built
+// from the configured site URL, so comparisons run against the URL path.
 func specialScore(loc string) int {
-	if loc == "/sitemap.xml" || loc == "/index.html" || loc == "/index.htm" || loc == "/" {
+	path := loc
+	if u, err := url.Parse(loc); err == nil && u.Path != "" {
+		path = u.Path
+	}
+	if path == "/sitemap.xml" || path == "/index.html" || path == "/index.htm" || path == "/" {
 		return +10
 	}
-	if strings.Contains(loc, "/index.htm") {
+	if strings.Contains(path, "/index.htm") {
 		return -2
 	}
 	// Google verification files
-	if matched, _ := regexp.MatchString(`/google[0-9a-f]+\.html`, loc); matched {
+	if matched, _ := regexp.MatchString(`/google[0-9a-f]+\.html`, path); matched {
 		return -10
 	}
-	if strings.HasSuffix(loc, ".xml") {
+	if strings.HasSuffix(path, ".xml") {
 		return -3
 	}
 	return 0

@@ -54,17 +54,43 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 		return feedItems[i].PublishedDate.After(feedItems[j].PublishedDate)
 	})
 
-	// Use newest page's published date for reproducible builds
-	var lastBuild time.Time
+	// Use newest page's published date for reproducible builds. Empty feeds
+	// fall back to the build time, so lastBuildDate/atom <updated>/sitemap
+	// lastmod never emit the zero time (year 0001).
+	lastBuild := now
 	if len(feedItems) > 0 {
 		lastBuild = feedItems[0].PublishedDate
-	} // zero time when no posts
+	}
 
 	// Helper to track successfully written feed files for sitemap
 	feedLastBuild := lastBuild
 
+	// Feed self-links: use the configured feed_url when set, falling back to
+	// the conventional feed paths below the site URL.
+	rssURL := site.FeedURL
+	if rssURL == "" {
+		rssURL = site.URL + "/rss2.xml"
+	}
+	atomURL := site.FeedURL
+	if atomURL == "" {
+		atomURL = site.URL + "/atom.xml"
+	}
+	// addFeedSitemapEntry records a written feed file for the sitemap. With a
+	// custom feed_url both feeds share one URL, which must be listed only once.
+	addFeedSitemapEntry := func(loc string) {
+		for _, e := range sitemapEntries {
+			if e.Loc == loc {
+				return
+			}
+		}
+		sitemapEntries = append(sitemapEntries, templates.SitemapEntry{
+			Loc:        loc,
+			Priority:   "0.6",
+			Changefreq: "weekly",
+			LastMod:    feedLastBuild.Format(dateLayout),
+		})
+	}
 	// RSS 2.0
-	rssURL := site.URL + "/rss2.xml"
 	rssData := templates.FeedData{
 		Site:      siteGo,
 		FeedURL:   rssURL,
@@ -83,17 +109,11 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 			log.Printf("write rss2.xml: %v", err)
 		} else {
 			log.Printf("  rss2 -> rss2.xml")
-			sitemapEntries = append(sitemapEntries, templates.SitemapEntry{
-				Loc:        rssURL,
-				Priority:   "0.6",
-				Changefreq: "weekly",
-				LastMod:    feedLastBuild.Format(dateLayout),
-			})
+			addFeedSitemapEntry(rssURL)
 		}
 	}
 
 	// Atom
-	atomURL := site.URL + "/atom.xml"
 	atomData := templates.FeedData{
 		Site:      siteGo,
 		FeedURL:   atomURL,
@@ -112,12 +132,7 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 			log.Printf("write atom.xml: %v", err)
 		} else {
 			log.Printf("  atom -> atom.xml")
-			sitemapEntries = append(sitemapEntries, templates.SitemapEntry{
-				Loc:        atomURL,
-				Priority:   "0.6",
-				Changefreq: "weekly",
-				LastMod:    feedLastBuild.Format(dateLayout),
-			})
+			addFeedSitemapEntry(atomURL)
 		}
 	}
 	return sitemapEntries
