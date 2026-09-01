@@ -137,3 +137,28 @@ func TestParseMultipartBodyDecodesEncodings(t *testing.T) {
 		})
 	}
 }
+
+func TestParseMultipartBodyRejectsTruncatedPart(t *testing.T) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	part, err := w.CreatePart(map[string][]string{
+		"Content-Type": {"text/plain"},
+	})
+	if err != nil {
+		t.Fatalf("CreatePart: %v", err)
+	}
+	part.Write([]byte("a partial comment line"))
+	w.Close()
+
+	// Simulate a cut-off message by dropping the closing boundary.
+	raw := buf.Bytes()
+	cut := bytes.LastIndex(raw, []byte("\r\n--"))
+	if cut < 0 {
+		t.Fatalf("no closing boundary found in %q", raw)
+	}
+
+	got := parseMultipartBody(multipart.NewReader(bytes.NewReader(raw[:cut]), w.Boundary()))
+	if got != "" {
+		t.Errorf("parseMultipartBody() = %q for a truncated part, want empty", got)
+	}
+}
