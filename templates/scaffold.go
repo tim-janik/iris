@@ -473,7 +473,9 @@ func hasBodyClass(classes []string, target string) bool {
 //   pg.enlisted('posts') and page.shares_dirname(pg)
 //
 // baseDir is the current page's directory (e.g., "/posts/" or "/").
-// Posts are filtered to only those sharing the same directory (shares_dirname).
+// Posts are filtered to only those living in the same directory; descendant
+// directories are excluded. The root directory is special-cased to list all
+// posts.
 func BuildFeedItems(
 	pages []PageData,
 	site SiteConfig,
@@ -497,10 +499,16 @@ func BuildFeedItems(
 			continue
 		}
 
-		// Filter: shares_dirname — post's dir must start with base dir
-		// For root (baseDirNorm == ""), all posts match
-		if baseDirNorm != "" && !strings.HasPrefix(pg.DirName+"/", baseDirNorm) {
-			continue
+		// Filter: shares_dirname — post must live in exactly this directory
+		// (not a descendant). For root (baseDirNorm == ""), all posts match.
+		if baseDirNorm != "" {
+			pgDir := pg.DirName
+			if len(pgDir) > 0 && pgDir[len(pgDir)-1] != '/' {
+				pgDir = pgDir + "/"
+			}
+			if pgDir != baseDirNorm {
+				continue
+			}
 		}
 
 		// Compute the post's full href

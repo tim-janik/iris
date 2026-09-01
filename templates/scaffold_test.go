@@ -135,6 +135,36 @@ func TestBuildFeedItems(t *testing.T) {
 	}
 }
 
+// Subdirectory listings include only posts living in exactly that directory;
+// posts from descendant directories are excluded. The root directory lists
+// all posts.
+func TestBuildFeedItems_ExactDirectoryFilter(t *testing.T) {
+	pages := []PageData{
+		{Title: "In 2024", IsPost: true, DirName: "/2024/", Stem: "in-2024", PublishedDate: time.Date(2024, 1, 10, 0, 0, 0, 0, time.UTC)},
+		{Title: "Nested", IsPost: true, DirName: "/2024/nested/", Stem: "nested", PublishedDate: time.Date(2024, 1, 12, 0, 0, 0, 0, time.UTC)},
+		{Title: "In 2025", IsPost: true, DirName: "/2025", Stem: "in-2025", PublishedDate: time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)},
+	}
+	site := SiteConfig{Title: "Test Site"}
+
+	for _, baseDir := range []string{"", "/"} {
+		if got := BuildFeedItems(pages, site, baseDir, FeedOptions{}); len(got) != 3 {
+			t.Errorf("baseDir %q: expected all 3 posts, got %d", baseDir, len(got))
+		}
+	}
+	got := BuildFeedItems(pages, site, "/2024", FeedOptions{})
+	if len(got) != 1 || got[0].Title != "In 2024" {
+		t.Errorf("baseDir /2024: expected only 'In 2024', got %+v", got)
+	}
+	got = BuildFeedItems(pages, site, "/2024/nested", FeedOptions{})
+	if len(got) != 1 || got[0].Title != "Nested" {
+		t.Errorf("baseDir /2024/nested: expected only 'Nested', got %+v", got)
+	}
+	got = BuildFeedItems(pages, site, "/2025", FeedOptions{})
+	if len(got) != 1 || got[0].Title != "In 2025" {
+		t.Errorf("baseDir /2025: expected only 'In 2025', got %+v", got)
+	}
+}
+
 // --- helpers ---
 
 func mustNewEngine(t *testing.T) *Engine {

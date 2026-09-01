@@ -246,11 +246,12 @@ func ssgMain() {
 
 	eng := initEngine(args.templateDir)
 	site := loadSiteConfig(args.inputDir, args.configFile)
-	// Default feed_url to site URL + "/rss2.xml" when not specified
-	if site.FeedURL == "" {
-		site.FeedURL = site.URL + "/rss2.xml"
-	}
 	siteGo := toTemplateSite(site)
+	// Default the template feed link (page <link rel="alternate">) to the RSS
+	// feed path when feed_url is unset; generateFeeds keeps site.FeedURL raw.
+	if siteGo.FeedURL == "" {
+		siteGo.FeedURL = site.URL + "/rss2.xml"
+	}
 
 	// Candidate files = union(include_glob, asset_glob); files matching neither are skipped
 	allInclude := append(append([]string{}, site.IncludeGlob...), site.AssetGlob...)
