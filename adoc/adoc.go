@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/tim-janik/iris/htmlutil"
@@ -41,6 +42,77 @@ func DefaultConfig() Config {
 		},
 	}
 }
+
+// TitleFromSource extracts the page title from AsciiDoc source text the same
+// way asciidoctor does: the first heading of any level (= Title, == Section,
+// # Title, ## Section) becomes the document title, with inline formatting
+// reduced to plaintext like asciidoctor's <title> output. Lines that are not
+// headings (attribute entries, // comments, block delimiters such as a bare
+// ====, prose) are skipped.
+//
+// This allows synthesizing a title without running asciidoctor, e.g. for
+// dashboards that only parse frontmatter.
+func TitleFromSource(data []byte) string {
+	for _, line := range strings.Split(string(data), "\n") {
+		if title, ok := headingText(line); ok {
+			return plainText(title)
+		}
+	}
+	return ""
+}
+
+// headingText returns the text of the heading on line, if line is a heading:
+// "= " through "====== " (document title and section levels) or the
+// single-line "# " form (##, ### ... map to deeper section levels). A bare
+// delimiter line like "====" (example block) without trailing text is not a
+// heading.
+func headingText(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	n := 0
+	for n < len(trimmed) && (trimmed[n] == '=' || trimmed[n] == '#') {
+		n++
+	}
+	if n == 0 || n >= len(trimmed) || trimmed[n] != ' ' {
+		return "", false
+	}
+	text := strings.TrimSpace(trimmed[n:])
+	if text == "" {
+		return "", false
+	}
+	return text, true
+}
+
+// plainText reduces AsciiDoc inline formatting to plain text, mirroring the
+// text asciidoctor emits in <title>: code spans `x` / +x+, monospace #x#,
+// bold *x*, italic _x_ (all constrained to word boundaries), and links
+// url[Label] / <<id,Label>> collapse to their visible label.
+func plainText(s string) string {
+	s = reLink.ReplaceAllString(s, "$1")
+	s = reXRef.ReplaceAllString(s, "$1")
+	s = reCodeBacktick.ReplaceAllString(s, "$1")
+	s = reCodePlus.ReplaceAllString(s, "$1$2$3")
+	s = reMono.ReplaceAllString(s, "$1$2$3")
+	s = reBold.ReplaceAllString(s, "$1$2$3")
+	s = reItalic.ReplaceAllString(s, "$1$2$3")
+	return s
+}
+
+var (
+	// url[Label] or scheme:url[Label] → Label (https?://...; also bare word
+	// followed by [Label] for link: and mailto: macros)
+	reLink = regexp.MustCompile(`(?:https?|ftp|mailto):[^\s\[]+\[([^\]]*)\]`)
+	// <<id,Label>> → Label
+	reXRef = regexp.MustCompile(`<<[^,>]+,\s*([^>]+)>>`)
+	// `code` → code
+	reCodeBacktick = regexp.MustCompile("`([^`]+)`")
+	// +code+ → code (word-boundary constrained so C++ and "a + b" survive)
+	reCodePlus = regexp.MustCompile(`(^|[\s(])\+([^+]+)\+($|[\s).,;:!?])`)
+	// #mono# → mono (word-boundary constrained)
+	reMono = regexp.MustCompile(`(^|[\s(])#([^#\s]+)#($|[\s).,;:!?])`)
+	// *bold* → bold, _italic_ → italic (word-boundary constrained)
+	reBold   = regexp.MustCompile(`(^|[\s(])\*([^*]+)\*($|[\s).,;:!?])`)
+	reItalic = regexp.MustCompile(`(^|[\s(])_([^_]+)_($|[\s).,;:!?])`)
+)
 
 // Result holds the disassembled HTML output from asciidoctor.
 type Result struct {

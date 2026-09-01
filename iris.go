@@ -84,7 +84,6 @@ type InputPage struct {
 	Depth      int                // directory depth
 	Root       string             // relative path to root (e.g., "../..")
 	Front      *Frontmatter
-	Body       string          // markdown body (unprocessed)
 	Rendered   *pandoc.Result  // pandoc/asciidoctor-converted HTML
 	PubDate    time.Time       // publication date (frontmatter > earliest git commit > mtime)
 	ModDate    time.Time       // last-updated date (latest git commit > frontmatter > mtime)
@@ -207,7 +206,16 @@ func processSourceFile(rel, absPath, ext, inputDir string) (*InputPage, error) {
 	}
 
 	fm, body := parseFrontmatter(data, rel)
-	if fm.TitleSynthesized && extractH1Title(body) != "" {
+	if ext == ".adoc" && fm.TitleSynthesized {
+		// AsciiDoc: synthesize the title the way asciidoctor extracts it (first
+		// heading of any level) instead of the filename stem, so templates and
+		// the issue dashboard see the same title asciidoctor would produce,
+		// without running asciidoctor. No cmdline title is passed to
+		// asciidoctor (it derives the title from the document itself).
+		if t := adoc.TitleFromSource(data); t != "" {
+			fm.Title = t
+		}
+	} else if fm.TitleSynthesized && frontmatter.H1Title(body) != "" {
 		// The document already supplies its title through an H1. Do not pass
 		// the synthesized filename title to pandoc, which would duplicate it.
 		fm.Title = ""
@@ -247,8 +255,11 @@ func processSourceFile(rel, absPath, ext, inputDir string) (*InputPage, error) {
 		return nil, fmt.Errorf("%s: conversion produced empty output", rel)
 	}
 
-	// Merge pandoc/asciidoctor-extracted metadata into frontmatter
-	if fm.Title == "" && rendered.Title != "" {
+	// Merge pandoc/asciidoctor-extracted metadata into frontmatter.
+	// A converter-extracted title is authoritative over a synthesized one:
+	// asciidoctor/pandoc plaintext extraction is exact, while our source-level
+	// synthesis (filename stem, AsciiDoc heading scan) is best-effort.
+	if rendered.Title != "" && (fm.Title == "" || fm.TitleSynthesized) {
 		fm.Title = rendered.Title
 	}
 	if hasBlankKeywords(fm.Keywords) && len(rendered.Keywords) > 0 {
@@ -309,7 +320,6 @@ func processSourceFile(rel, absPath, ext, inputDir string) (*InputPage, error) {
 		Depth:      depth,
 		Root:       root,
 		Front:      fm,
-		Body:       body,
 		Rendered:   rendered,
 		PubDate:    pubDate,
 		ModDate:    modDate,
@@ -404,9 +414,12 @@ func gitAuthorDates(filePath string) (first, last time.Time) {
 		log.Printf("  git parse error %s: %q", filePath, lines[len(lines)-1])
 		return
 	}
-	// Normalize all times to UTC for consistency.
-	// formatDate() already calls .UTC() for rfc8601/rfc822z.
-	// For date-only formats, UTC ensures the date is stable regardless of server timezone.
+	// Normalize all times to UTC so direct .Format() call sites (footer
+	// "Last updated", sitemap lastmod, feed lastBuildDate) are stable across
+	// timezones. Note: formatDate() in templates/scaffold.go re-renders
+	// date-only formats in local time (t.Local()) by design — matching the
+	// golden output — so page meta dates (DC.date.issued etc.) do depend on
+	// the build machine's TZ.
 	first = first.UTC()
 	last = last.UTC()
 	return
@@ -533,20 +546,21 @@ func renderPage(eng *templates.Engine, pg *InputPage, site templates.SiteConfig)
 		Site:           site,
 		ShowIndexTitle: pg.Type == pageclass.PageDirIndex,
 		Page: templates.PageData{
-			Title:         pg.Front.Title,
-			Header:        template.HTML(pg.Rendered.Header),
-			Content:       template.HTML(fullContent),
-			FooterUpdated: footerUpdated,
-			Keywords:      pg.Front.Keywords,
-			Authors:       authors,
-			DirName:       pg.DirName,
-			Stem:          pg.Stem,
-			Depth:         pg.Depth,
-			IsPost:        pg.Type.IsPost(),
-			PublishedDate: pg.PubDate,
-			ModifiedDate:  pg.ModDate,
-			LUID:          computeLUID(pg.DirName + pg.Stem),
-			EmailPath:     strings.TrimSuffix(pg.DirName, "/") + "/" + pg.Stem,
+			Title:          pg.Front.Title,
+			Header:         template.HTML(pg.Rendered.Header),
+			Content:        template.HTML(fullContent),
+			FooterUpdated:  footerUpdated,
+			Keywords:       pg.Front.Keywords,
+			Authors:        authors,
+			DirName:        pg.DirName,
+			Stem:           pg.Stem,
+			Depth:          pg.Depth,
+			IsPost:         pg.Type.IsPost(),
+			PublishedDate:  pg.PubDate,
+			ModifiedDate:   pg.ModDate,
+			LUID:           computeLUID(pg.DirName + pg.Stem),
+			EmailPath:      strings.TrimSuffix(pg.DirName, "/") + "/" + pg.Stem,
+			StylesheetHref: templates.ResolveStylesheet(site.Stylesheet, pg.Root),
 			CommentLink: template.HTML(fmt.Sprintf(
 				`<a href="mailto:newcomment+%s@testbit.eu?subject=Add%%20comment%%20to%%20%s&body=Add%%20comment%%20to%%20%s:%%0a%%0a"
 				   title="Send comment to publish via email, the email address itself is not published"
@@ -644,17 +658,6 @@ func writeConfigTOML(w io.Writer, cfg SiteConfig) error {
 // Index subcommand — generate index.md lines from a list of .md files
 // ---------------------------------------------------------------------------
 
-// extractH1Title returns the first top-level heading (# ...) from markdown text.
-func extractH1Title(text string) string {
-	for _, line := range strings.Split(text, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "# ") && !strings.HasPrefix(trimmed, "## ") {
-			return strings.TrimPrefix(trimmed, "# ")
-		}
-	}
-	return ""
-}
-
 // indexArgs holds the parsed index command arguments.
 type indexArgs struct {
 	files []string
@@ -687,7 +690,7 @@ func indexMain() {
 
 		title := fm.Title
 		if title == "" {
-			title = extractH1Title(body)
+			title = frontmatter.H1Title(body)
 		}
 		if title == "" {
 			title = filepath.Base(strings.TrimSuffix(filePath, filepath.Ext(filePath)))
@@ -716,9 +719,10 @@ type ssgArgs struct {
 	clearOutput bool
 	inputDir    string
 	outputDir   string
-	configFile  string // explicit config file path (-c flag)
-	templateDir string // custom template directory (-t flag, overrides embedded)
-	workers     int    // max concurrent pandoc/asciidoctor workers
+	configFile  string    // explicit config file path (-c flag)
+	templateDir string    // custom template directory (-t flag, overrides embedded)
+	workers     int       // max concurrent pandoc/asciidoctor workers
+	now         time.Time // override for time-dependent output (sitemap priorities/changefreq)
 }
 
 // parseSSGArgs parses command-line arguments for the ssg subcommand.
@@ -728,6 +732,7 @@ func parseSSGArgs() ssgArgs {
 	configFile := fs.String("c", "", "path to site config file (TOML)")
 	templateDir := fs.String("t", "", "custom template directory (overrides embedded templates)")
 	workers := fs.Int("j", 0, "max concurrent pandoc/asciidoctor workers (0 = NumCPU)")
+	nowFlag := fs.String("now", "", "override current time for time-dependent output (YYYY-MM-DD or RFC3339; default: IRIS_NOW env or real time)")
 	fs.Parse(os.Args[2:])
 
 	args := fs.Args()
@@ -744,7 +749,29 @@ func parseSSGArgs() ssgArgs {
 		w = runtime.NumCPU()
 	}
 
-	return ssgArgs{clearOutput: *clearOutput, inputDir: inputDir, outputDir: outputDir, configFile: *configFile, templateDir: *templateDir, workers: w}
+	return ssgArgs{clearOutput: *clearOutput, inputDir: inputDir, outputDir: outputDir, configFile: *configFile, templateDir: *templateDir, workers: w, now: parseNow(*nowFlag)}
+}
+
+// parseNow resolves the effective "current time" for a build: the -now flag
+// wins, then the IRIS_NOW environment variable, then real time. Accepts
+// YYYY-MM-DD or RFC3339. The result is normalized to UTC so time-dependent
+// output (sitemap priorities/changefreq) is reproducible across machines.
+func parseNow(nowFlag string) time.Time {
+	value := nowFlag
+	if value == "" {
+		value = os.Getenv("IRIS_NOW")
+	}
+	if value == "" {
+		return time.Now().UTC()
+	}
+	if t, err := time.Parse(dateLayout, value); err == nil {
+		return t.UTC()
+	}
+	if t, err := time.Parse(time.RFC3339, value); err == nil {
+		return t.UTC()
+	}
+	log.Fatalf("invalid -now value %q: use YYYY-MM-DD or RFC3339", value)
+	return time.Time{}
 }
 
 // parseInitArgs parses command-line arguments for the init subcommand.
@@ -988,14 +1015,14 @@ func ssgMain() {
 	renderAllPages(eng, pages, siteGo, args.outputDir)
 
 	// Generate directory indices (returns sitemap entries for each dirindex)
-	dirIndexEntries := generateDirIndices(eng, pages, siteGo, args.outputDir)
+	dirIndexEntries := generateDirIndices(eng, pages, siteGo, args.outputDir, args.now)
 
 	// Generate RSS and Atom feeds (returns sitemap entries for feed files)
-	feedEntries := generateFeeds(eng, pages, site, siteGo, args.outputDir)
+	feedEntries := generateFeeds(eng, pages, site, siteGo, args.outputDir, args.now)
 
 	// Generate sitemap (after dirindices and feeds so all entries are known)
 	allExtra := append(dirIndexEntries, feedEntries...)
-	generateSitemap(eng, pages, site, args.outputDir, allExtra)
+	generateSitemap(eng, pages, site, args.outputDir, allExtra, args.now)
 
 	log.Printf("Done. Output in %s", args.outputDir)
 }
@@ -1055,7 +1082,7 @@ func renderAllPages(eng *templates.Engine, pages []*InputPage, siteGo templates.
 
 // generateDirIndices creates index.html files for each directory containing posts.
 // Returns sitemap entries for each dirindex page created.
-func generateDirIndices(eng *templates.Engine, pages []*InputPage, siteGo templates.SiteConfig, outputDir string) []templates.SitemapEntry {
+func generateDirIndices(eng *templates.Engine, pages []*InputPage, siteGo templates.SiteConfig, outputDir string, now time.Time) []templates.SitemapEntry {
 	var sitemapEntries []templates.SitemapEntry
 	dirs := findDirs(pages)
 	for _, dir := range dirs {
@@ -1097,9 +1124,10 @@ func generateDirIndices(eng *templates.Engine, pages []*InputPage, siteGo templa
 		pageData := templates.TemplateData{
 			Site: siteGo,
 			Page: templates.PageData{
-				Title:         "", // D2: leave empty so template falls back to site title
-				DirName:       dirName,
-				FooterUpdated: "",
+				Title:          "", // D2: leave empty so template falls back to site title
+				DirName:        dirName,
+				FooterUpdated:  "",
+				StylesheetHref: templates.ResolveStylesheet(siteGo.Stylesheet, root),
 			},
 			Root:           root,
 			BodyClass:      bodyClass,
@@ -1139,13 +1167,13 @@ func generateDirIndices(eng *templates.Engine, pages []*InputPage, siteGo templa
 			}
 		}
 		if dirModDate.IsZero() {
-			dirModDate = time.Now().UTC()
+			dirModDate = now
 		}
 		loc := siteGo.URL + "/" + strings.TrimPrefix(strings.TrimPrefix(cleanURL(indexPath), "/"), "./")
 		sitemapEntries = append(sitemapEntries, templates.SitemapEntry{
 			Loc:        loc,
 			Priority:   calcPriorityForPath(loc, depth),
-			Changefreq: calcChangefreqForDate(dirModDate, loc),
+			Changefreq: calcChangefreqForDate(dirModDate, loc, now),
 			LastMod:    dirModDate.Format(dateLayout),
 		})
 	}
@@ -1154,9 +1182,8 @@ func generateDirIndices(eng *templates.Engine, pages []*InputPage, siteGo templa
 
 // generateSitemap creates sitemap.xml for all pages.
 // extraEntries are additional sitemap entries (e.g. dirindex, feeds) not derived from InputPage.
-func generateSitemap(eng *templates.Engine, pages []*InputPage, site SiteConfig, outputDir string, extraEntries []templates.SitemapEntry) {
+func generateSitemap(eng *templates.Engine, pages []*InputPage, site SiteConfig, outputDir string, extraEntries []templates.SitemapEntry, now time.Time) {
 	var entries []templates.SitemapEntry
-	now := time.Now().UTC()
 	for _, pg := range pages {
 		// Only include pages that need sitemap entries AND are web files (HTML)
 		// Static assets (images, etc.) are copied but not listed in sitemap
@@ -1177,7 +1204,7 @@ func generateSitemap(eng *templates.Engine, pages []*InputPage, site SiteConfig,
 		entries = append(entries, templates.SitemapEntry{
 			Loc:        loc,
 			Priority:   calcPriority(pg, loc, now),
-			Changefreq: calcChangefreq(pg, loc),
+			Changefreq: calcChangefreq(pg, loc, now),
 			LastMod:    pg.ModDate.Format(dateLayout),
 		})
 	}
@@ -1198,19 +1225,19 @@ func generateSitemap(eng *templates.Engine, pages []*InputPage, site SiteConfig,
 
 // calcChangefreq determines sitemap change frequency based on modification age.
 // Mirrors Python Page.get_changefreq(): age in days → hourly/daily/weekly/monthly/yearly.
-func calcChangefreq(pg *InputPage, loc string) string {
-	return calcChangefreqForDate(pg.ModDate, loc)
+func calcChangefreq(pg *InputPage, loc string, now time.Time) string {
+	return calcChangefreqForDate(pg.ModDate, loc, now)
 }
 
 // calcChangefreqForDate is the same as calcChangefreq but takes a time directly
 // instead of an InputPage. Used for dirindex and feed entries.
-func calcChangefreqForDate(modDate time.Time, loc string) string {
+func calcChangefreqForDate(modDate time.Time, loc string, now time.Time) string {
 	// Special pages get 'always'
 	if specialScore(loc) >= 7 {
 		return "always"
 	}
 	// Use modification date for age calculation
-	modAge := daysSince(modDate)
+	modAge := daysSince(modDate, now)
 	if modAge <= 1 {
 		return "hourly"
 	}
@@ -1267,12 +1294,12 @@ func calcPriority(pg *InputPage, loc string, now time.Time) string {
 		credits++
 	}
 	// Published within last year
-	pubAge := daysSince(pg.PubDate)
+	pubAge := daysSince(pg.PubDate, now)
 	if pubAge <= 366 {
 		credits++
 	}
 	// Modified within last 66 days
-	modAge := daysSince(pg.ModDate)
+	modAge := daysSince(pg.ModDate, now)
 	if modAge <= 66 {
 		credits++
 	}
@@ -1304,8 +1331,8 @@ func formatPriority(raw int) string {
 }
 
 // daysSince returns the number of days between t and now.
-func daysSince(t time.Time) int {
-	return int(time.Since(t).Hours() / 24)
+func daysSince(t, now time.Time) int {
+	return int(now.Sub(t).Hours() / 24)
 }
 
 // newFeedItem creates a FeedItem from an InputPage.
@@ -1327,7 +1354,7 @@ func newFeedItem(pg *InputPage, siteURL string, siteTitle string, descLen int) t
 
 // generateFeeds creates RSS 2.0 and Atom feeds for all posts.
 // Returns sitemap entries for the feed files created.
-func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, siteGo templates.SiteConfig, outputDir string) []templates.SitemapEntry {
+func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, siteGo templates.SiteConfig, outputDir string, now time.Time) []templates.SitemapEntry {
 	var sitemapEntries []templates.SitemapEntry
 	// Collect all posts sorted by published date (newest first)
 	var feedItems []templates.FeedItem
@@ -1338,7 +1365,7 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 		}
 		// Feed age cutoff: skip posts older than FeedAge days (-1 = unlimited)
 		if siteGo.FeedAge >= 0 {
-			age := time.Since(pg.PubDate)
+			age := now.Sub(pg.PubDate)
 			if age > cutoffAge {
 				continue
 			}
@@ -1462,17 +1489,4 @@ func cleanURL(path string) string {
 		return dir
 	}
 	return strings.TrimSuffix(path, ".html")
-}
-
-// execPath returns the absolute path of the running binary.
-func execPath() string {
-	path, err := exec.LookPath(os.Args[0])
-	if err != nil {
-		return os.Args[0]
-	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return path
-	}
-	return abs
 }

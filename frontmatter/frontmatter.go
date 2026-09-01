@@ -21,9 +21,9 @@ type Frontmatter struct {
 	Authors     []string
 	Raw         map[string]string
 
-	// TitleSynthesized is true when Title came from the source filename rather
-	// than frontmatter.  A converter can use this to provide a title explicitly
-	// when the document has no H1 (pandoc otherwise rejects such documents).
+	// TitleSynthesized is true when Title did not come from the file header.
+	// It was made from the file name or the first heading. Only pass it
+	// on when the file has no heading, so the title does not show twice.
 	TitleSynthesized bool
 }
 
@@ -133,6 +133,23 @@ func titleFromSource(sourceName string) string {
 		base = strings.TrimSuffix(base, ext)
 	}
 	return base
+}
+
+// H1Title returns the text of the first top-level ATX heading (# Title) in a
+// markdown body, or "" when the document has no H1. Deeper headings (## …)
+// don't count. Used to decide whether a document supplies its own title when
+// frontmatter has none (TitleSynthesized handling).
+func H1Title(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "## ") || strings.HasPrefix(trimmed, "##\t") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "# ") || strings.HasPrefix(trimmed, "#\t") {
+			return strings.TrimSpace(trimmed[2:])
+		}
+	}
+	return ""
 }
 
 // nodeStrings supports both YAML sequences and the comma-separated scalar
