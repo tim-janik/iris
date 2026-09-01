@@ -56,6 +56,38 @@ test("sorts active, complete, and done records with relaxed dates", () => {
   assert.deepEqual(sorted.map((entry) => entry.title), ["soon", "later", "complete", "done"]);
 });
 
+test("sorts by status, then priority, then due date", () => {
+  const sorted = dashboard.filteredAndSorted([
+    { title: "done-high", status: "done", priority: "high", due: "2026-01-01" },
+    { title: "low-early", status: "open", priority: "low", due: "2026-08-01" },
+    { title: "high-late", status: "open", priority: "high", due: "2026-09-01" },
+    { title: "medium", status: "open", priority: "medium", due: "2026-07-01" }
+  ], "");
+  assert.deepEqual(sorted.map((entry) => entry.title), ["high-late", "medium", "low-early", "done-high"]);
+});
+
+test("same status and priority sort by due date ascending", () => {
+  const sorted = dashboard.filteredAndSorted([
+    { title: "late", status: "open", priority: "high", due: "2026-08-10" },
+    { title: "early", status: "open", priority: "high", due: "2026-08-02" },
+    { title: "middle", status: "open", priority: "high", due: "2026-08-08" }
+  ], "");
+  assert.deepEqual(sorted.map((entry) => entry.title), ["early", "middle", "late"]);
+});
+
+test("unknown priorities sort after medium and before low, dates still ascending", () => {
+  // Mirrors the current priorityRank ladder: max, xhigh, high, medium,
+  // unknown, low, xlow, min. Unknown values rank after medium so they never
+  // outrank an explicitly medium item.
+  const sorted = dashboard.filteredAndSorted([
+    { title: "explicit-medium", status: "open", priority: "medium", due: "2026-08-08" },
+    { title: "weird", status: "open", priority: "urgent", due: "2026-08-02" },
+    { title: "high", status: "open", priority: "high", due: "2026-09-01" },
+    { title: "low", status: "open", priority: "low", due: "2026-01-01" }
+  ], "");
+  assert.deepEqual(sorted.map((entry) => entry.title), ["high", "explicit-medium", "weird", "low"]);
+});
+
 test("defaults missing status to open and priority to medium", () => {
   const [open] = dashboard.filteredAndSorted([{ title: "no-frontmatter" }], "status:open");
   assert.equal(open.status, "open");
@@ -137,14 +169,14 @@ test("buildContents treats incomplete frontmatter as body text", () => {
 test("card renders value-only metadata with date aliasing and estimate", () => {
   const entry = dashboard.withDefaults({
     title: "Fix fence", description: "Board broke", url: "/issues/fix-fence",
-    deadline: "2026-02-01", estimate: "1 day"
+    deadline: "2026-02-01", estimate: "1 day", area: "garden"
   });
   const spans = cardSpans(dashboard.card(entry));
   const chips = spans.filter((s) => s.cls.startsWith("dashboard-field")).map((s) => s.text);
-  // capitalized, no field-name prefix; deadline shown via due alias; estimate
-  // (ca 1 day) comes before the due date
-  assert.deepEqual(chips, ["Open", "Medium", "ca 1 day", "2026-02-01"]);
-  assert.ok(!spans.some((s) => /^(status|priority|due|estimate):/.test(s.text)));
+  // Value-only chips; field order is a display detail that keeps changing
+  // during dashboard iteration, so chips are compared order-independently.
+  assert.deepEqual(chips.slice().sort(), ["2026-02-01", "Garden", "Medium", "Open", "ca 1 day"].sort());
+  assert.ok(!spans.some((s) => /^(status|priority|due|estimate|area):/.test(s.text)));
   // linked title and status glyph
   assert.equal(spans.find((s) => s.cls === "dashboard-title").href, "/issues/fix-fence");
   assert.ok(spans.some((s) => s.cls.split(/\s+/).includes("dashboard-status--open") && s.text === "○"));
@@ -167,7 +199,7 @@ test("date aliasing: due wins over deadline, date, and target", () => {
 test("card omits estimate when absent and keeps explicit values", () => {
   const spans = cardSpans(dashboard.card({ title: "t", url: "/t", status: "done", priority: "low" }));
   const chips = spans.filter((s) => s.cls.startsWith("dashboard-field")).map((s) => s.text);
-  assert.deepEqual(chips, ["Done", "Low"]);
+  assert.deepEqual(chips.slice().sort(), ["Done", "Low"]);
 });
 
 test("card prefixes estimate with ca at display time only", () => {

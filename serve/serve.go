@@ -31,6 +31,21 @@ import (
 //go:embed dashboard.js
 var dashboardScript []byte
 
+// dashboardOverridePath returns the executable-relative dashboard script
+// override, iris-executable-relative:./serve/dashboard.js: the path
+// "serve/dashboard.js" resolved against the directory of the running iris
+// executable. With the binary built at the repository root (<repo>/iris),
+// this lands on <repo>/serve/dashboard.js — the live source file — so
+// dashboard.js can be edited and picked up on the next page load without
+// rebuilding iris.
+func dashboardOverridePath() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(exe), "serve", "dashboard.js")
+}
+
 // Server holds configuration for the markdown HTTP server.
 type Server struct {
 	// Root is the directory whose markdown/asciidoc files are served.
@@ -162,6 +177,16 @@ func serveDashboardAsset(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	if r.Method == http.MethodHead {
 		return
+	}
+	// Prefer the live dashboard.js next to the executable when present, so
+	// dashboard development needs no rebuild/restart; fall back to the
+	// embedded copy otherwise. The file is read on every request, so edits
+	// show up on the next page load.
+	if override := dashboardOverridePath(); override != "" {
+		if data, err := os.ReadFile(override); err == nil {
+			_, _ = w.Write(data)
+			return
+		}
 	}
 	_, _ = w.Write(dashboardScript)
 }
