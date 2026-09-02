@@ -122,9 +122,11 @@ func decodeHeader(raw string) string {
 }
 
 // parseMultipartBody extracts the text/plain body from a multipart message.
+// Parts are read raw and passed through decodePart, so quoted-printable and
+// base64 Content-Transfer-Encodings are handled.
 func parseMultipartBody(r *multipart.Reader) string {
 	for {
-		part, err := r.NextPart()
+		part, err := r.NextRawPart()
 		if err != nil {
 			break
 		}
@@ -132,10 +134,7 @@ func parseMultipartBody(r *multipart.Reader) string {
 		if strings.HasPrefix(part.Header.Get("Content-Type"), "text/plain") {
 			var buf bytes.Buffer
 			buf.ReadFrom(part)
-			body := buf.String()
-			body = strings.ReplaceAll(body, "\r\n", "\n")
-			body = strings.ReplaceAll(body, "\r", "\n")
-			return body
+			return decodePart(buf.Bytes(), part.Header.Get("Content-Transfer-Encoding"))
 		}
 	}
 	return ""
@@ -320,12 +319,12 @@ func cleanCommentBody(body string) string {
 		}
 	}
 
-	// Strip email signature: lines starting with "-- " at the end
-	if idx := strings.Index(body, "-- "); idx >= 0 {
-		// Only strip if "-- " is at the start of a line
-		if idx == 0 || body[idx-1] == '\n' {
-			body = body[:idx]
-		}
+	// Strip the email signature at the last line-start occurrence of "-- ",
+	// so earlier comment lines containing "-- " are preserved.
+	if idx := strings.LastIndex(body, "\n-- "); idx >= 0 {
+		body = body[:idx+1]
+	} else if strings.HasPrefix(body, "-- ") {
+		body = ""
 	}
 
 	// Collapse multiple blank lines into double newlines
@@ -339,6 +338,7 @@ func cleanCommentBody(body string) string {
 
 // renderCommentHTML generates the HTML for a single comment.
 func renderCommentHTML(c Comment) string {
+	escapedName := html.EscapeString(c.FromName)
 	escapedBody := html.EscapeString(c.Body)
 
 	return fmt.Sprintf(`<div class="sect1">
@@ -353,5 +353,5 @@ func renderCommentHTML(c Comment) string {
       </div>
     </div>
   </div>
-</div>`, c.ID, c.Date, c.FromName, escapedBody)
+</div>`, c.ID, c.Date, escapedName, escapedBody)
 }

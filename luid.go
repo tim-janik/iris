@@ -4,9 +4,14 @@ package main
 import (
 	"crypto/sha3"
 	"math/big"
+	"strings"
 )
 
 const base62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+// luidLen is the fixed LUID length: 5 hash bytes (40 bits) always encode
+// to at most 7 base62 digits.
+const luidLen = 7
 
 // computeLUID produces a stable 7-char identifier from the page href.
 // Mirrors Python: shake256("luid\0" + href).digest(5), base62 encoded.
@@ -15,7 +20,9 @@ func computeLUID(href string) string {
 	h.Write([]byte("luid\x00" + href))
 	buf := make([]byte, 5)
 	h.Read(buf)
-	return toBase62(buf)
+	s := toBase62(buf)
+	// Left-pad with '0' so values below 62^6 still fill 7 characters.
+	return strings.Repeat("0", luidLen-len(s)) + s
 }
 
 // toBase62 converts big-endian bytes to a base62 string.

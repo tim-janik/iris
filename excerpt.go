@@ -17,19 +17,15 @@ func stripTags(input string) string {
 		} else if r == '>' {
 			inTag = false
 		} else if !inTag {
-			// Normalize whitespace: collapse runs of whitespace into single spaces
-			if r == '\n' || r == '\r' || r == '\t' {
-				r = ' '
-			}
 			buf.WriteRune(r)
 		}
 	}
-	// Collapse multiple spaces into one
-	result := strings.Join(strings.Fields(buf.String()), " ")
-	// Decode HTML entities (e.g. &#34; → ", &lt; → <) so the excerpt
-	// contains plain text that won't be double-escaped by the template engine.
-	result = html.UnescapeString(result)
-	return strings.TrimSpace(result)
+	// Decode HTML entities (e.g. &#34; → ", &nbsp; → non-breaking space)
+	// before collapsing whitespace, so decoded entities act as regular
+	// whitespace and the excerpt contains plain text that won't be
+	// double-escaped by the template engine.
+	result := html.UnescapeString(buf.String())
+	return strings.Join(strings.Fields(result), " ")
 }
 
 // truncateExcerpt truncates text to at most limit characters (runes), breaking
@@ -37,6 +33,9 @@ func stripTags(input string) string {
 // characters and appends an ellipsis (…). If the text fits within the limit
 // it is returned unchanged.
 func truncateExcerpt(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
 	runes := []rune(text)
 	if len(runes) <= limit {
 		return text
