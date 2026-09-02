@@ -133,7 +133,12 @@ func parseMultipartBody(r *multipart.Reader) string {
 
 		if strings.HasPrefix(part.Header.Get("Content-Type"), "text/plain") {
 			var buf bytes.Buffer
-			buf.ReadFrom(part)
+			if _, err := buf.ReadFrom(part); err != nil {
+				// A failed read means the part is incomplete (e.g. the
+				// message was cut off); never use partial data as a comment.
+				log.Printf("  mailbox: read comment part: %v", err)
+				return ""
+			}
 			return decodePart(buf.Bytes(), part.Header.Get("Content-Transfer-Encoding"))
 		}
 	}
