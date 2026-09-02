@@ -28,6 +28,16 @@ func TestStripTagsUnescapesHTML(t *testing.T) {
 			in:   `<p>plain text <strong>bold</strong></p>`,
 			want: `plain text bold`,
 		},
+		{
+			name: "nbsp entities collapse into word boundaries",
+			in:   `first&nbsp;&nbsp;&nbsp;second`,
+			want: `first second`,
+		},
+		{
+			name: "newline entities collapse into spaces",
+			in:   `<p>one&#10;two&#13;three</p>`,
+			want: `one two three`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -64,6 +74,18 @@ func TestTruncateExcerpt(t *testing.T) {
 			text:  "supercalifragilistic",
 			limit: 10,
 			want:  "supercalif…",
+		},
+		{
+			name:  "zero limit yields empty excerpt",
+			text:  "hello world",
+			limit: 0,
+			want:  "",
+		},
+		{
+			name:  "negative limit yields empty excerpt",
+			text:  "hello world",
+			limit: -3,
+			want:  "",
 		},
 	}
 
