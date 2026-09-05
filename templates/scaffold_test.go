@@ -81,6 +81,15 @@ func TestResolveStylesheetMixedCaseURL(t *testing.T) {
 	}
 }
 
+func TestRenderServeStylesheetHref(t *testing.T) {
+	eng := mustNewEngine(t)
+	html, err := eng.RenderServe(ServeData{StylesheetHref: "../assets/site.css"})
+	if err != nil {
+		t.Fatalf("RenderServe(): %v", err)
+	}
+	assertContains(t, string(html), `<link href="../assets/site.css" rel="stylesheet"/>`)
+}
+
 func TestRenderPost(t *testing.T) {
 	eng := mustNewEngine(t)
 	data := samplePageData()

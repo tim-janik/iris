@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -79,6 +80,15 @@ func normalizePath(urlPath string) string {
 		return "/" + urlPath
 	}
 	return urlPath
+}
+
+func serveRootPrefix(urlPath string) string {
+	dir := path.Dir(urlPath)
+	if dir == "/" || dir == "." {
+		return "."
+	}
+	depth := strings.Count(strings.Trim(dir, "/"), "/") + 1
+	return strings.TrimRight(strings.Repeat("../", depth), "/")
 }
 
 // metadataRoute reports whether urlPath names the special per-directory route.
@@ -513,9 +523,10 @@ func (s *Server) Serve() error {
 
 		// Render through serve.html template
 		serveData := templates.ServeData{
-			Site:    s.Site,
-			Title:   title,
-			Content: htmplt.HTML(bodyContent),
+			Site:           s.Site,
+			Title:          title,
+			Content:        htmplt.HTML(bodyContent),
+			StylesheetHref: templates.ResolveStylesheet(s.Site.Stylesheet, serveRootPrefix(urlPath)),
 		}
 		htmlBytes, err := eng.RenderServe(serveData)
 		if err != nil {

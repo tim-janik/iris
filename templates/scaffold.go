@@ -223,6 +223,7 @@ type ServeData struct {
 	Title     string
 	Content   htmplt.HTML
 	BodyClass string
+	StylesheetHref string
 }
 
 // New creates a new Engine by parsing Go templates.
