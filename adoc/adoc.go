@@ -36,7 +36,7 @@ func DefaultConfig() Config {
 			"stylesdir!",
 			"webfonts!",
 			"source-highlighter=highlightjs",
-			"highlightjsdir=https://cdn.rawgit.com/tim-janik/cdn/a8a12dd652e48532faa39657bc5cc268525a89ca/highlightjs9/",
+			"highlightjsdir=assets/highlight.js/",
 			"icons=font",
 			"iconfont-cdn=https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.css",
 		},

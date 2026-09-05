@@ -32,16 +32,17 @@ It depends on `pandoc` for Markdown and `asciidoctor` for AsciiDoc to render tho
 
 ## Install
 
-For bulding, Go 1.25 is needed.
+For building or installing from a checkout, Go 1.25, make, curl, and sha256sum are needed. Generate the ignored assets first:
 
 ```sh
-go install github.com/tim-janik/iris@latest
+go generate ./...
+go install .
 ```
 
-Or build from a checkout:
+Or build a local binary:
 
 ```sh
-make build		# needs Go, pandoc and asciidoctor on PATH
+make build
 ./iris -h
 ```
 

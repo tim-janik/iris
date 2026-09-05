@@ -97,7 +97,8 @@ func ResolveStylesheet(stylesheet, root string) string {
 	if s == "" {
 		return ""
 	}
-	if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") ||
+	lower := strings.ToLower(s)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") ||
 		strings.HasPrefix(s, "//") || strings.HasPrefix(s, "/") {
 		return s
 	}
@@ -195,12 +196,34 @@ type Engine struct {
 	siteTmpl  *txtplt.Template
 }
 
+func WriteAssets(outputDir string, highlightScript, highlightStyle []byte) error {
+	assets := []struct {
+		name string
+		data []byte
+	}{
+		{"assets/highlight.js/highlight.min.js", highlightScript},
+		{"assets/highlight.js/styles/github.min.css", highlightStyle},
+	}
+	for _, asset := range assets {
+		name := asset.name
+		path := filepath.Join(outputDir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return fmt.Errorf("create asset directory: %w", err)
+		}
+		if err := os.WriteFile(path, asset.data, 0644); err != nil {
+			return fmt.Errorf("write asset %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
 // ServeData is the top-level data structure for serve.html rendering.
 type ServeData struct {
 	Site      SiteConfig
 	Title     string
 	Content   htmplt.HTML
 	BodyClass string
+	StylesheetHref string
 }
 
 // New creates a new Engine by parsing Go templates.
@@ -286,6 +309,17 @@ func New(templateDir string) (*Engine, error) {
 		}
 		return txtplt.New("").Funcs(txtFuncs).ParseFS(templateFS, names...)
 	}
+	parseServe := func() (*htmplt.Template, error) {
+		if templateDir != "" {
+			name := filepath.Join(templateDir, "serve.html")
+			if _, err := os.Stat(name); err == nil {
+				return htmplt.New("").Funcs(htmlFuncs).ParseFiles(name)
+			} else if !os.IsNotExist(err) {
+				return nil, err
+			}
+		}
+		return htmplt.New("").Funcs(htmlFuncs).ParseFS(templateFS, "serve.html")
+	}
 	var (
 		pageTmpl, postTmpl, dirTmpl, topTmpl, serveTmpl *htmplt.Template
 		feedTmpl, siteTmpl                              *txtplt.Template
@@ -322,7 +356,7 @@ func New(templateDir string) (*Engine, error) {
 		return nil, fmt.Errorf("parse sitemap templates: %w", err)
 	}
 
-	serveTmpl, err = parseHTML("serve.html")
+	serveTmpl, err = parseServe()
 	if err != nil {
 		return nil, fmt.Errorf("parse serve template: %w", err)
 	}
