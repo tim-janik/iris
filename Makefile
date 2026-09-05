@@ -1,26 +1,30 @@
 # This Source Code Form is licensed MPL-2.0: http://mozilla.org/MPL/2.0
 
+SHELL := /bin/bash
+
+include external/Makefile.mk
+
 # == all ==
 all: build ## Compile all packages
 .PHONY: all
 
 # == test ==
-test: ## Run all tests
+test: $(EXTERNAL_STAMPS) ## Run all tests
 	go test ./...
 .PHONY: test
 
 # == vet ==
-vet: ## Run go vet
+vet: $(EXTERNAL_STAMPS) ## Run go vet
 	go vet ./...
 .PHONY: vet
 
 # == bench ==
-bench: ## Run all benchmarks
+bench: $(EXTERNAL_STAMPS) ## Run all benchmarks
 	go test -bench=. ./...
 .PHONY: bench
 
 # == build ==
-build: ## Build a portable binary
+build: $(EXTERNAL_STAMPS) ## Build a portable binary
 	CGO_ENABLED=0 go build -trimpath # -buildvcs=true -ldflags="-s -w" .
 .PHONY: build
 

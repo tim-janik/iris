@@ -195,6 +195,27 @@ type Engine struct {
 	siteTmpl  *txtplt.Template
 }
 
+func WriteAssets(outputDir string, highlightScript, highlightStyle []byte) error {
+	assets := []struct {
+		name string
+		data []byte
+	}{
+		{"assets/highlight.js/highlight.min.js", highlightScript},
+		{"assets/highlight.js/styles/github.min.css", highlightStyle},
+	}
+	for _, asset := range assets {
+		name := asset.name
+		path := filepath.Join(outputDir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return fmt.Errorf("create asset directory: %w", err)
+		}
+		if err := os.WriteFile(path, asset.data, 0644); err != nil {
+			return fmt.Errorf("write asset %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
 // ServeData is the top-level data structure for serve.html rendering.
 type ServeData struct {
 	Site      SiteConfig

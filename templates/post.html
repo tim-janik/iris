@@ -37,7 +37,7 @@
 
 {{- define "body_js"}}
 
-<link rel="stylesheet" href="https://cdn.rawgit.com/tim-janik/cdn/a8a12dd652e48532faa39657bc5cc268525a89ca/highlightjs9/styles/github.min.css">
-<script src="https://cdn.rawgit.com/tim-janik/cdn/a8a12dd652e48532faa39657bc5cc268525a89ca/highlightjs9/highlight.min.js"></script>
+<link rel="stylesheet" href="{{.Root}}/assets/highlight.js/styles/github.min.css">
+<script src="{{.Root}}/assets/highlight.js/highlight.min.js"></script>
 <script>hljs.initHighlighting()</script>
 {{- end}}
