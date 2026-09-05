@@ -2,6 +2,8 @@ package templates
 
 import (
 	htmplt "html/template"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +36,42 @@ func TestRenderPage(t *testing.T) {
 	assertContains(t, string(html), "Last updated")
 	// non-post pages should NOT have DC.date.issued
 	assertNotContains(t, string(html), "DC.date.issued")
+}
+
+func TestRenderPageUsesLocalHighlightAssets(t *testing.T) {
+	eng := mustNewEngine(t)
+	html, err := eng.RenderPage(samplePageData())
+	if err != nil {
+		t.Fatalf("RenderPage(): %v", err)
+	}
+	out := string(html)
+	assertContains(t, out, `href="../assets/highlight.js/styles/github.min.css"`)
+	assertContains(t, out, `src="../assets/highlight.js/highlight.min.js"`)
+	assertNotContains(t, out, "cdn.rawgit.com")
+	assertNotContains(t, out, "cdnjs.cloudflare.com/ajax/libs/highlight.js")
+}
+
+func TestWriteAssets(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteAssets(dir, []byte("script"), []byte("style")); err != nil {
+		t.Fatalf("WriteAssets(): %v", err)
+	}
+	for _, test := range []struct {
+		name string
+		want string
+	}{
+		{"assets/highlight.js/highlight.min.js", "script"},
+		{"assets/highlight.js/styles/github.min.css", "style"},
+	} {
+		name := test.name
+		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if string(data) != test.want {
+			t.Errorf("asset %s = %q, want %q", name, data, test.want)
+		}
+	}
 }
 
 func TestRenderPost(t *testing.T) {
