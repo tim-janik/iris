@@ -3,6 +3,8 @@ package main
 
 import _ "embed"
 
+//go:generate make -f external/Makefile.mk
+
 //go:embed external/highlight.js/highlight.min.js
 var highlightScriptAsset []byte
 

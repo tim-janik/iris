@@ -32,7 +32,14 @@ It depends on `pandoc` for Markdown and `asciidoctor` for AsciiDoc to render tho
 
 ## Install
 
-For building, Go 1.25, curl, and sha256sum are needed. Build from a checkout:
+For building or installing from a checkout, Go 1.25, make, curl, and sha256sum are needed. Generate the ignored assets first:
+
+```sh
+go generate ./...
+go install .
+```
+
+Or build a local binary:
 
 ```sh
 make build

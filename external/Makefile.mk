@@ -1,9 +1,9 @@
 # This Source Code Form is licensed MPL-2.0: http://mozilla.org/MPL/2.0
 
 define fetch-and-check
-( sha256sum -c --status <<<'$(strip $2)  $(strip $1)' 2>/dev/null || \
+( printf '%s  %s\n' '$(strip $2)' '$(strip $1)' | sha256sum -c --status 2>/dev/null || \
     curl --retry 2 -# -fSL '$(strip $3)' -o '$(strip $1)' ) && \
-sha256sum -c <<<'$(strip $2)  $(strip $1)' || \
+printf '%s  %s\n' '$(strip $2)' '$(strip $1)' | sha256sum -c || \
   { sha256sum "$(strip $1)"; echo '$(strip $1): ERROR: failed to fetch: $(strip $3)' >&2; exit 1; }
 endef
 
@@ -13,11 +13,15 @@ highlightjs/css_sha := 554e678b27d0ddbcca9b262965c55fabbea13e902673d402a0b86384d
 highlightjs/js_url := https://cdnjs.cloudflare.com/ajax/libs/highlight.js/$(highlightjs/version)/highlight.min.js
 highlightjs/css_url := https://cdnjs.cloudflare.com/ajax/libs/highlight.js/$(highlightjs/version)/styles/github.min.css
 
+EXTERNAL_STAMPS := external/highlight.js/.sha-$(highlightjs/js_sha)-$(highlightjs/css_sha)
+
+.PHONY: all
+all: $(EXTERNAL_STAMPS)
+
 external/highlight.js/.sha-$(highlightjs/js_sha)-$(highlightjs/css_sha):
 	mkdir -p external/highlight.js/styles
 	$(call fetch-and-check, external/highlight.js/highlight.min.js, $(highlightjs/js_sha), $(highlightjs/js_url))
 	$(call fetch-and-check, external/highlight.js/styles/github.min.css, $(highlightjs/css_sha), $(highlightjs/css_url))
 	touch $@
 
-EXTERNAL_STAMPS := external/highlight.js/.sha-$(highlightjs/js_sha)-$(highlightjs/css_sha)
 $(EXTERNAL_STAMPS): external/Makefile.mk
