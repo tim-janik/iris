@@ -309,6 +309,17 @@ func New(templateDir string) (*Engine, error) {
 		}
 		return txtplt.New("").Funcs(txtFuncs).ParseFS(templateFS, names...)
 	}
+	parseServe := func() (*htmplt.Template, error) {
+		if templateDir != "" {
+			name := filepath.Join(templateDir, "serve.html")
+			if _, err := os.Stat(name); err == nil {
+				return htmplt.New("").Funcs(htmlFuncs).ParseFiles(name)
+			} else if !os.IsNotExist(err) {
+				return nil, err
+			}
+		}
+		return htmplt.New("").Funcs(htmlFuncs).ParseFS(templateFS, "serve.html")
+	}
 	var (
 		pageTmpl, postTmpl, dirTmpl, topTmpl, serveTmpl *htmplt.Template
 		feedTmpl, siteTmpl                              *txtplt.Template
@@ -345,7 +356,7 @@ func New(templateDir string) (*Engine, error) {
 		return nil, fmt.Errorf("parse sitemap templates: %w", err)
 	}
 
-	serveTmpl, err = parseHTML("serve.html")
+	serveTmpl, err = parseServe()
 	if err != nil {
 		return nil, fmt.Errorf("parse serve template: %w", err)
 	}

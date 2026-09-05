@@ -90,6 +90,38 @@ func TestRenderServeStylesheetHref(t *testing.T) {
 	assertContains(t, string(html), `<link href="../assets/site.css" rel="stylesheet"/>`)
 }
 
+func TestNewCustomDirWithoutServeTemplate(t *testing.T) {
+	dir := t.TempDir()
+	writeTemplateFiles(t, dir, "serve.html")
+	eng, err := New(dir)
+	if err != nil {
+		t.Fatalf("New(): %v", err)
+	}
+	html, err := eng.RenderServe(ServeData{Site: SiteConfig{Title: "Test"}, Title: "Live"})
+	if err != nil {
+		t.Fatalf("RenderServe(): %v", err)
+	}
+	assertContains(t, string(html), "<title>Live</title>")
+}
+
+func TestNewCustomDirOverridesServeTemplate(t *testing.T) {
+	dir := t.TempDir()
+	writeTemplateFiles(t, dir, "serve.html")
+	custom := `{{define "serve"}}<html>CUSTOM-SERVE</html>{{end}}`
+	if err := os.WriteFile(filepath.Join(dir, "serve.html"), []byte(custom), 0644); err != nil {
+		t.Fatal(err)
+	}
+	eng, err := New(dir)
+	if err != nil {
+		t.Fatalf("New(): %v", err)
+	}
+	html, err := eng.RenderServe(ServeData{})
+	if err != nil {
+		t.Fatalf("RenderServe(): %v", err)
+	}
+	assertContains(t, string(html), "CUSTOM-SERVE")
+}
+
 func TestRenderPost(t *testing.T) {
 	eng := mustNewEngine(t)
 	data := samplePageData()
@@ -584,6 +616,25 @@ func TestXmlEscape_NoDoubleEscaping(t *testing.T) {
 				t.Errorf("xmlEscape(%q) = %q, contains %q (double-escaped?)", tc.input, got, tc.notWant)
 			}
 		})
+	}
+}
+
+func writeTemplateFiles(t *testing.T, dir, skip string) {
+	t.Helper()
+	for _, name := range []string{
+		"layout.html", "page.html", "post.html", "dirindex.html",
+		"topindex.html", "rss2.xml", "atom.xml", "sitemap.xml", "serve.html",
+	} {
+		if name == skip {
+			continue
+		}
+		data, err := templateFS.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
 	}
 }
 
