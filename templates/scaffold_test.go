@@ -74,6 +74,13 @@ func TestWriteAssets(t *testing.T) {
 	}
 }
 
+func TestResolveStylesheetMixedCaseURL(t *testing.T) {
+	want := "HTTPS://CDN.Example.COM/Site.CSS"
+	if got := ResolveStylesheet(want, ".."); got != want {
+		t.Fatalf("ResolveStylesheet() = %q, want %q", got, want)
+	}
+}
+
 func TestRenderPost(t *testing.T) {
 	eng := mustNewEngine(t)
 	data := samplePageData()
