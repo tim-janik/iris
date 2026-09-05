@@ -117,6 +117,27 @@ func TestRenderSitemap(t *testing.T) {
 	assertContains(t, string(xml), `<loc>https://example.com/page</loc>`)
 }
 
+func TestRenderSitemapElementOrder(t *testing.T) {
+	eng := mustNewEngine(t)
+	data := SitemapData{
+		Pages: []SitemapEntry{{
+			Loc:        "https://example.com/page",
+			LastMod:    "2024-01-15",
+			Changefreq: "weekly",
+			Priority:   "0.9",
+		}},
+	}
+	xml, err := eng.RenderSitemap(data)
+	if err != nil {
+		t.Fatalf("RenderSitemap(): %v", err)
+	}
+	out := string(xml)
+	want := "<loc>https://example.com/page</loc>\n    <lastmod>2024-01-15</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.9</priority>"
+	if !strings.Contains(out, want) {
+		t.Fatalf("sitemap elements are out of order:\n%s", out)
+	}
+}
+
 func TestBuildFeedItems(t *testing.T) {
 	pages := []PageData{
 		{Title: "Post A", IsPost: true, PublishedDate: time.Date(2024, 1, 10, 0, 0, 0, 0, time.UTC)},
