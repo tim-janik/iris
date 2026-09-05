@@ -201,3 +201,21 @@ func TestDashboardAsset(t *testing.T) {
 		t.Fatal("empty dashboard asset")
 	}
 }
+
+func TestServeRootPrefix(t *testing.T) {
+	tests := []struct {
+		urlPath string
+		want    string
+	}{
+		{urlPath: "/page", want: "."},
+		{urlPath: "/", want: "."},
+		{urlPath: "/posts/page", want: ".."},
+		{urlPath: "/posts/2024/page", want: "../.."},
+		{urlPath: "/posts/2024/deep/page", want: "../../.."},
+	}
+	for _, test := range tests {
+		if got := serveRootPrefix(test.urlPath); got != test.want {
+			t.Errorf("serveRootPrefix(%q) = %q, want %q", test.urlPath, got, test.want)
+		}
+	}
+}
