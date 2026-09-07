@@ -10,7 +10,7 @@
   <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
   <title>{{if .Title}}{{.Site.TitlePrefix}}{{.Title}}{{else}}{{.Site.Title}}{{end}}{{if .Site.Slogan}} | {{.Site.Slogan}}{{end}}</title>
   <style>body{max-width:99em;margin:0 auto}</style>
-  {{if .Site.Stylesheet}}<link href="{{.Site.Stylesheet}}" rel="stylesheet"/>{{end}}
+  {{if .StylesheetHref}}<link href="{{.StylesheetHref}}" rel="stylesheet"/>{{end}}
 </head>
 <body class="serve {{.BodyClass}}">
 {{.Content}}

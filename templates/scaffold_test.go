@@ -2,6 +2,8 @@ package templates
 
 import (
 	htmplt "html/template"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +36,90 @@ func TestRenderPage(t *testing.T) {
 	assertContains(t, string(html), "Last updated")
 	// non-post pages should NOT have DC.date.issued
 	assertNotContains(t, string(html), "DC.date.issued")
+}
+
+func TestRenderPageUsesLocalHighlightAssets(t *testing.T) {
+	eng := mustNewEngine(t)
+	html, err := eng.RenderPage(samplePageData())
+	if err != nil {
+		t.Fatalf("RenderPage(): %v", err)
+	}
+	out := string(html)
+	assertContains(t, out, `href="../assets/highlight.js/styles/github.min.css"`)
+	assertContains(t, out, `src="../assets/highlight.js/highlight.min.js"`)
+	assertNotContains(t, out, "cdn.rawgit.com")
+	assertNotContains(t, out, "cdnjs.cloudflare.com/ajax/libs/highlight.js")
+}
+
+func TestWriteAssets(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteAssets(dir, []byte("script"), []byte("style")); err != nil {
+		t.Fatalf("WriteAssets(): %v", err)
+	}
+	for _, test := range []struct {
+		name string
+		want string
+	}{
+		{"assets/highlight.js/highlight.min.js", "script"},
+		{"assets/highlight.js/styles/github.min.css", "style"},
+	} {
+		name := test.name
+		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if string(data) != test.want {
+			t.Errorf("asset %s = %q, want %q", name, data, test.want)
+		}
+	}
+}
+
+func TestResolveStylesheetMixedCaseURL(t *testing.T) {
+	want := "HTTPS://CDN.Example.COM/Site.CSS"
+	if got := ResolveStylesheet(want, ".."); got != want {
+		t.Fatalf("ResolveStylesheet() = %q, want %q", got, want)
+	}
+}
+
+func TestRenderServeStylesheetHref(t *testing.T) {
+	eng := mustNewEngine(t)
+	html, err := eng.RenderServe(ServeData{StylesheetHref: "../assets/site.css"})
+	if err != nil {
+		t.Fatalf("RenderServe(): %v", err)
+	}
+	assertContains(t, string(html), `<link href="../assets/site.css" rel="stylesheet"/>`)
+}
+
+func TestNewCustomDirWithoutServeTemplate(t *testing.T) {
+	dir := t.TempDir()
+	writeTemplateFiles(t, dir, "serve.html")
+	eng, err := New(dir)
+	if err != nil {
+		t.Fatalf("New(): %v", err)
+	}
+	html, err := eng.RenderServe(ServeData{Site: SiteConfig{Title: "Test"}, Title: "Live"})
+	if err != nil {
+		t.Fatalf("RenderServe(): %v", err)
+	}
+	assertContains(t, string(html), "<title>Live</title>")
+}
+
+func TestNewCustomDirOverridesServeTemplate(t *testing.T) {
+	dir := t.TempDir()
+	writeTemplateFiles(t, dir, "serve.html")
+	custom := `{{define "serve"}}<html>CUSTOM-SERVE</html>{{end}}`
+	if err := os.WriteFile(filepath.Join(dir, "serve.html"), []byte(custom), 0644); err != nil {
+		t.Fatal(err)
+	}
+	eng, err := New(dir)
+	if err != nil {
+		t.Fatalf("New(): %v", err)
+	}
+	html, err := eng.RenderServe(ServeData{})
+	if err != nil {
+		t.Fatalf("RenderServe(): %v", err)
+	}
+	assertContains(t, string(html), "CUSTOM-SERVE")
 }
 
 func TestRenderPost(t *testing.T) {
@@ -115,6 +201,27 @@ func TestRenderSitemap(t *testing.T) {
 	}
 	assertContains(t, string(xml), `<urlset`)
 	assertContains(t, string(xml), `<loc>https://example.com/page</loc>`)
+}
+
+func TestRenderSitemapElementOrder(t *testing.T) {
+	eng := mustNewEngine(t)
+	data := SitemapData{
+		Pages: []SitemapEntry{{
+			Loc:        "https://example.com/page",
+			LastMod:    "2024-01-15",
+			Changefreq: "weekly",
+			Priority:   "0.9",
+		}},
+	}
+	xml, err := eng.RenderSitemap(data)
+	if err != nil {
+		t.Fatalf("RenderSitemap(): %v", err)
+	}
+	out := string(xml)
+	want := "<loc>https://example.com/page</loc>\n    <lastmod>2024-01-15</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.9</priority>"
+	if !strings.Contains(out, want) {
+		t.Fatalf("sitemap elements are out of order:\n%s", out)
+	}
 }
 
 func TestBuildFeedItems(t *testing.T) {
@@ -509,6 +616,25 @@ func TestXmlEscape_NoDoubleEscaping(t *testing.T) {
 				t.Errorf("xmlEscape(%q) = %q, contains %q (double-escaped?)", tc.input, got, tc.notWant)
 			}
 		})
+	}
+}
+
+func writeTemplateFiles(t *testing.T, dir, skip string) {
+	t.Helper()
+	for _, name := range []string{
+		"layout.html", "page.html", "post.html", "dirindex.html",
+		"topindex.html", "rss2.xml", "atom.xml", "sitemap.xml", "serve.html",
+	} {
+		if name == skip {
+			continue
+		}
+		data, err := templateFS.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
 	}
 }
 

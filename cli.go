@@ -243,6 +243,9 @@ func ssgMain() {
 	log.Printf("Output: %s", args.outputDir)
 
 	prepareOutputDir(args.outputDir, args.clearOutput)
+	if err := templates.WriteAssets(args.outputDir, highlightScriptAsset, highlightStyleAsset); err != nil {
+		log.Fatalf("write template assets: %v", err)
+	}
 
 	eng := initEngine(args.templateDir)
 	site := loadSiteConfig(args.inputDir, args.configFile)
