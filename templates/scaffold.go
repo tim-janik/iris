@@ -224,6 +224,7 @@ type ServeData struct {
 	Site      SiteConfig
 	Title     string
 	Content   htmplt.HTML
+	Mermaid   bool
 	BodyClass string
 	StylesheetHref string
 }

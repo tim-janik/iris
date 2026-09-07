@@ -91,6 +91,30 @@ func TestRenderServeStylesheetHref(t *testing.T) {
 	assertContains(t, string(html), `<link href="../assets/site.css" rel="stylesheet"/>`)
 }
 
+func TestRenderServeLoadsHighlightAndMermaid(t *testing.T) {
+	eng := mustNewEngine(t)
+
+	html, err := eng.RenderServe(ServeData{Mermaid: true})
+	if err != nil {
+		t.Fatalf("RenderServe(): %v", err)
+	}
+	out := string(html)
+	assertContains(t, out, `<link rel="stylesheet" href="./..~meta~?asset=github.min.css">`)
+	assertContains(t, out, `<script src="./..~meta~?asset=highlight.min.js"></script>`)
+	assertContains(t, out, `hljs.initHighlighting()`)
+	assertContains(t, out, `<script src="./..~meta~?asset=mermaid.min.js"></script>`)
+	assertContains(t, out, `mermaid.initialize({startOnLoad:true})`)
+
+	html, err = eng.RenderServe(ServeData{})
+	if err != nil {
+		t.Fatalf("RenderServe(): %v", err)
+	}
+	out = string(html)
+	assertContains(t, out, `hljs.initHighlighting()`)
+	assertNotContains(t, out, "mermaid.min.js")
+	assertNotContains(t, out, "mermaid.initialize")
+}
+
 func TestNewCustomDirWithoutServeTemplate(t *testing.T) {
 	dir := t.TempDir()
 	writeTemplateFiles(t, dir, "serve.html")

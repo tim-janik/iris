@@ -40,7 +40,7 @@ func TestMetadataRouteEnumeratesDirectMarkdownChildren(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/tasks/..~meta~?cmd=get-frontmatter-array", nil)
 	rec := httptest.NewRecorder()
-	handleMetadataRoute(rec, req, root)
+	(&Server{Root: root}).handleMetadataRoute(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
 	}
@@ -79,7 +79,7 @@ func TestMetadataRouteEmptyAndTraversal(t *testing.T) {
 	for _, path := range []string{"/empty/..~meta~?cmd=get-frontmatter-array", "/../..~meta~?cmd=get-frontmatter-array"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
-		handleMetadataRoute(rec, req, root)
+		(&Server{Root: root}).handleMetadataRoute(rec, req)
 		if path[1] == '.' {
 			if rec.Code != http.StatusBadRequest {
 				t.Errorf("traversal status = %d", rec.Code)
@@ -100,7 +100,7 @@ func TestCreateFileSuccess(t *testing.T) {
 	body := "---\nstatus: open\npriority: high\n---\nNew issue body\n"
 	req := httptest.NewRequest(http.MethodPost, "/tasks/..~meta~?cmd=create-file&name=new-issue.md", strings.NewReader(body))
 	rec := httptest.NewRecorder()
-	handleMetadataRoute(rec, req, root)
+	(&Server{Root: root}).handleMetadataRoute(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
 	}
@@ -120,7 +120,7 @@ func TestCreateFileSuccess(t *testing.T) {
 	// the new file must be visible to get-frontmatter-array immediately
 	req = httptest.NewRequest(http.MethodGet, "/tasks/..~meta~?cmd=get-frontmatter-array", nil)
 	rec = httptest.NewRecorder()
-	handleMetadataRoute(rec, req, root)
+	(&Server{Root: root}).handleMetadataRoute(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "\"url\":\"/tasks/new-issue\"") {
 		t.Errorf("metadata after create = %d %s", rec.Code, rec.Body)
 	}
@@ -131,7 +131,7 @@ func TestCreateFileRejectsBadNames(t *testing.T) {
 	for _, name := range []string{".hidden.md", "sub/evil.md", `sub\evil.md`, "..", "../up.md", "notes.txt", "README", ""} {
 		req := httptest.NewRequest(http.MethodPost, "/..~meta~?cmd=create-file&name="+name, strings.NewReader("x"))
 		rec := httptest.NewRecorder()
-		handleMetadataRoute(rec, req, root)
+		(&Server{Root: root}).handleMetadataRoute(rec, req)
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("name %q: status = %d, body = %s", name, rec.Code, rec.Body)
 		}
@@ -152,7 +152,7 @@ func TestCreateFileConflictsWithExistingFile(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodPost, "/..~meta~?cmd=create-file&name=exists.md", strings.NewReader("overwrite attempt"))
 	rec := httptest.NewRecorder()
-	handleMetadataRoute(rec, req, root)
+	(&Server{Root: root}).handleMetadataRoute(rec, req)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
 	}
@@ -170,21 +170,21 @@ func TestCreateFileRequiresPostAndExistingDirectory(t *testing.T) {
 	// GET is not allowed for create-file
 	req := httptest.NewRequest(http.MethodGet, "/..~meta~?cmd=create-file&name=x.md", nil)
 	rec := httptest.NewRecorder()
-	handleMetadataRoute(rec, req, root)
+	(&Server{Root: root}).handleMetadataRoute(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("GET status = %d, body = %s", rec.Code, rec.Body)
 	}
 	// missing directory
 	req = httptest.NewRequest(http.MethodPost, "/nope/..~meta~?cmd=create-file&name=x.md", strings.NewReader("x"))
 	rec = httptest.NewRecorder()
-	handleMetadataRoute(rec, req, root)
+	(&Server{Root: root}).handleMetadataRoute(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("missing dir status = %d, body = %s", rec.Code, rec.Body)
 	}
 	// traversal is rejected before any write
 	req = httptest.NewRequest(http.MethodPost, "/../..~meta~?cmd=create-file&name=x.md", strings.NewReader("x"))
 	rec = httptest.NewRecorder()
-	handleMetadataRoute(rec, req, root)
+	(&Server{Root: root}).handleMetadataRoute(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("traversal status = %d, body = %s", rec.Code, rec.Body)
 	}
@@ -193,12 +193,74 @@ func TestCreateFileRequiresPostAndExistingDirectory(t *testing.T) {
 func TestDashboardAsset(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/tasks/..~meta~?asset=dashboard.js", nil)
 	rec := httptest.NewRecorder()
-	handleMetadataRoute(rec, req, t.TempDir())
+	(&Server{Root: t.TempDir()}).handleMetadataRoute(rec, req)
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/javascript; charset=utf-8" {
 		t.Fatalf("asset response = %d %q", rec.Code, rec.Header().Get("Content-Type"))
 	}
 	if len(rec.Body.Bytes()) == 0 {
 		t.Fatal("empty dashboard asset")
+	}
+}
+
+func TestPageAssetsRoute(t *testing.T) {
+	tests := []struct {
+		name        string
+		server      Server
+		wantStatus  int
+		contentType string
+		wantBody    string
+	}{
+		{
+			name:        "mermaid script served",
+			server:      Server{MermaidScript: []byte("mermaid-bytes")},
+			wantStatus:  http.StatusOK,
+			contentType: "application/javascript; charset=utf-8",
+			wantBody:    "mermaid-bytes",
+		},
+		{
+			name:        "highlight stylesheet served",
+			server:      Server{HighlightStyle: []byte("css-bytes")},
+			wantStatus:  http.StatusOK,
+			contentType: "text/css; charset=utf-8",
+			wantBody:    "css-bytes",
+		},
+		{
+			name:       "unknown asset rejected",
+			server:     Server{MermaidScript: []byte("mermaid-bytes")},
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "unset asset rejected",
+			server:     Server{},
+			wantStatus: http.StatusNotFound,
+		},
+	}
+	for _, test := range tests {
+		asset := "mermaid.min.js"
+		if test.name == "highlight stylesheet served" {
+			asset = "github.min.css"
+		}
+		if test.name == "unknown asset rejected" {
+			asset = "nope.js"
+		}
+		if test.name == "unset asset rejected" {
+			asset = "highlight.min.js"
+		}
+		req := httptest.NewRequest(http.MethodGet, "/..~meta~?asset="+asset, nil)
+		rec := httptest.NewRecorder()
+		test.server.handleMetadataRoute(rec, req)
+		if rec.Code != test.wantStatus {
+			t.Errorf("%s: status = %d, want %d", test.name, rec.Code, test.wantStatus)
+			continue
+		}
+		if test.wantBody != "" {
+			if got := rec.Header().Get("Content-Type"); got != test.contentType {
+				t.Errorf("%s: content type = %q, want %q", test.name, got, test.contentType)
+			}
+			if rec.Body.String() != test.wantBody {
+				t.Errorf("%s: body = %q, want %q", test.name, rec.Body.String(), test.wantBody)
+			}
+		}
 	}
 }
 

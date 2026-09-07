@@ -72,6 +72,10 @@ type Server struct {
 	FaviconPath string
 	// Site holds site-level configuration (title, slogan, stylesheet, etc.).
 	Site templates.SiteConfig
+	// Embedded hljs/mermaid page assets served through the metadata route.
+	HighlightScript []byte
+	HighlightStyle  []byte
+	MermaidScript   []byte
 }
 
 // normalizePath ensures the URL path starts with a slash.
@@ -315,7 +319,7 @@ func serveCreateFile(w http.ResponseWriter, r *http.Request, root, urlPath strin
 	_ = json.NewEncoder(w).Encode(map[string]string{"created": name})
 }
 
-func handleMetadataRoute(w http.ResponseWriter, r *http.Request, root string) bool {
+func (s *Server) handleMetadataRoute(w http.ResponseWriter, r *http.Request) bool {
 	if !metadataRoute(r.URL.Path) {
 		return false
 	}
@@ -326,15 +330,15 @@ func handleMetadataRoute(w http.ResponseWriter, r *http.Request, root string) bo
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 			return true
 		}
-		if query.Get("asset") != "dashboard.js" {
-			http.Error(w, "Unknown asset", http.StatusNotFound)
+		if query.Get("asset") == "dashboard.js" {
+			serveDashboardAsset(w, r)
 			return true
 		}
-		serveDashboardAsset(w, r)
+		s.servePageAsset(w, r, query.Get("asset"))
 		return true
 	}
 	if query.Get("cmd") == "create-file" {
-		serveCreateFile(w, r, root, r.URL.Path)
+		serveCreateFile(w, r, s.Root, r.URL.Path)
 		return true
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -349,8 +353,32 @@ func handleMetadataRoute(w http.ResponseWriter, r *http.Request, root string) bo
 		}
 		return true
 	}
-	serveMetadata(w, r, root, r.URL.Path)
+	serveMetadata(w, r, s.Root, r.URL.Path)
 	return true
+}
+
+// servePageAsset serves embedded hljs/mermaid page assets; unknown or unset names yield 404.
+func (s *Server) servePageAsset(w http.ResponseWriter, r *http.Request, name string) {
+	var data []byte
+	contentType := ""
+	switch name {
+	case "highlight.min.js":
+		data, contentType = s.HighlightScript, "application/javascript; charset=utf-8"
+	case "github.min.css":
+		data, contentType = s.HighlightStyle, "text/css; charset=utf-8"
+	case "mermaid.min.js":
+		data, contentType = s.MermaidScript, "application/javascript; charset=utf-8"
+	}
+	if data == nil {
+		http.Error(w, "Unknown asset", http.StatusNotFound)
+		return
+	}
+	writeNoCache(w)
+	w.Header().Set("Content-Type", contentType)
+	if r.Method == http.MethodHead {
+		return
+	}
+	_, _ = w.Write(data)
 }
 
 // Serve starts the HTTP server and blocks until the server exits or errors.
@@ -386,7 +414,7 @@ func (s *Server) Handler() (http.Handler, error) {
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if metadataRoute(r.URL.Path) {
-			handleMetadataRoute(w, r, s.Root)
+			s.handleMetadataRoute(w, r)
 			return
 		}
 		if r.Method != http.MethodGet {
@@ -490,6 +518,7 @@ func (s *Server) Handler() (http.Handler, error) {
 		// Convert via pandoc or asciidoctor, extract full body (including <h1>)
 		var bodyContent string
 		var convertedTitle string
+		var pageMermaid bool
 		if strings.HasSuffix(absPath, ".adoc") {
 			htmlStr, convErr := adoc.Convert(s.AdocConfig, data)
 			if convErr != nil {
@@ -497,7 +526,7 @@ func (s *Server) Handler() (http.Handler, error) {
 				http.Error(w, fmt.Sprintf("Internal Server Error: %v", convErr), http.StatusInternalServerError)
 				return
 			}
-			bodyContent, convertedTitle = pandoc.ExtractBodyAndTitle(htmlStr)
+			bodyContent, convertedTitle, pageMermaid = pandoc.ExtractBodyAndTitle(htmlStr)
 		} else {
 			pandocTitle := ""
 			if fm.TitleSynthesized {
@@ -509,7 +538,7 @@ func (s *Server) Handler() (http.Handler, error) {
 				http.Error(w, fmt.Sprintf("Internal Server Error: %v", convErr), http.StatusInternalServerError)
 				return
 			}
-			bodyContent, convertedTitle = pandoc.ExtractBodyAndTitle(htmlStr)
+			bodyContent, convertedTitle, pageMermaid = pandoc.ExtractBodyAndTitle(htmlStr)
 		}
 
 		// Resolve title: frontmatter > h1 from converter > filename (with extension)
@@ -526,6 +555,7 @@ func (s *Server) Handler() (http.Handler, error) {
 			Site:           s.Site,
 			Title:          title,
 			Content:        htmplt.HTML(bodyContent),
+			Mermaid:        pageMermaid,
 			StylesheetHref: templates.ResolveStylesheet(s.Site.Stylesheet, serveRootPrefix(urlPath)),
 		}
 		htmlBytes, err := eng.RenderServe(serveData)

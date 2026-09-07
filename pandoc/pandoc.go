@@ -114,13 +114,14 @@ func ConvertAndDisassembleWithTitle(cfg Config, data []byte, inputFormat, title 
 }
 
 // ExtractBodyAndTitle parses a full HTML document and returns the body's
-// inner HTML (including any <h1>) and the page title: the first <h1> wins,
-// falling back to <title>; pandoc's "-" title placeholder counts as empty.
+// inner HTML (including any <h1>), the page title: the first <h1> wins,
+// falling back to <title>; pandoc's "-" title placeholder counts as empty,
+// and whether the body contains a mermaid diagram block.
 // Shared by iris serve (which renders the body with its <h1> intact).
-func ExtractBodyAndTitle(htmlStr string) (body, title string) {
+func ExtractBodyAndTitle(htmlStr string) (body, title string, mermaid bool) {
 	doc, err := htmlutil.Parse(htmlStr)
 	if err != nil {
-		return htmlStr, ""
+		return htmlStr, "", false
 	}
 	unwrapMermaidCode(bodyNode(doc))
 	body = strings.TrimSpace(htmlutil.InnerHTML(bodyNode(doc)))
@@ -128,7 +129,8 @@ func ExtractBodyAndTitle(htmlStr string) (body, title string) {
 	if title == "-" {
 		title = ""
 	}
-	return body, title
+	mermaid = detectMermaid(bodyNode(doc))
+	return body, title, mermaid
 }
 
 // bodyNode returns the <body> element, or the document root when absent

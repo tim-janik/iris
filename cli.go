@@ -200,14 +200,17 @@ func serveMain() {
 	site := loadSiteConfig(args.root, configFile)
 
 	srv := &serve.Server{
-		Root:         args.root,
-		Port:         args.port,
-		PandocConfig: pandoc.DefaultConfig(),
-		AdocConfig:   adoc.DefaultConfig(),
-		EditLinkCmd:  args.editLinkCmd,
-		TemplateDir:  args.templateDir,
-		FaviconPath:  args.faviconPath,
-		Site:         toTemplateSite(site),
+		Root:            args.root,
+		Port:            args.port,
+		PandocConfig:    pandoc.DefaultConfig(),
+		AdocConfig:      adoc.DefaultConfig(),
+		EditLinkCmd:     args.editLinkCmd,
+		TemplateDir:     args.templateDir,
+		FaviconPath:     args.faviconPath,
+		Site:            toTemplateSite(site),
+		HighlightScript: highlightScriptAsset,
+		HighlightStyle:  highlightStyleAsset,
+		MermaidScript:   mermaidScriptAsset,
 	}
 
 	if args.record != "" {
