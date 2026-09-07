@@ -4,7 +4,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,6 +19,7 @@ import (
 	"github.com/tim-janik/iris/adoc"
 	"github.com/tim-janik/iris/frontmatter"
 	"github.com/tim-janik/iris/globstar"
+	"github.com/tim-janik/iris/mimetype"
 	"github.com/tim-janik/iris/pandoc"
 	"github.com/tim-janik/iris/serve"
 	"github.com/tim-janik/iris/templates"
@@ -153,6 +158,7 @@ func parseInitArgs() string {
 type serveArgs struct {
 	root        string // directory containing markdown files
 	port        int    // TCP port to listen on
+	record      string // record serve responses under this directory, then exit
 	editLinkCmd string // command template for edit links (empty = disabled)
 	templateDir string // custom template directory (overrides embedded templates)
 	faviconPath string // path to favicon file served at /favicon.ico
@@ -162,6 +168,7 @@ type serveArgs struct {
 func parseServeArgs() serveArgs {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	port := fs.Int("port", 9454, "TCP port to listen on (default: 9454)")
+	record := fs.String("record", "", "record serve responses for all served files under root into this directory (cleared first) and exit")
 	editLinkCmd := fs.String("editlink", "", "command template to open source file in editor (empty = disabled); use %s for file path, %u for line number")
 	templateDir := fs.String("t", "", "custom template directory (overrides embedded templates)")
 	faviconPath := fs.String("favicon", "", "path to favicon file served at /favicon.ico")
@@ -174,7 +181,7 @@ func parseServeArgs() serveArgs {
 	}
 
 	root, _ := filepath.Abs(args[0])
-	return serveArgs{root: root, port: *port, editLinkCmd: *editLinkCmd, templateDir: *templateDir, faviconPath: *faviconPath}
+	return serveArgs{root: root, port: *port, record: *record, editLinkCmd: *editLinkCmd, templateDir: *templateDir, faviconPath: *faviconPath}
 }
 
 // serveMain is the main entry point for the serve subcommand.
@@ -203,9 +210,99 @@ func serveMain() {
 		Site:         toTemplateSite(site),
 	}
 
+	if args.record != "" {
+		handler, err := srv.Handler()
+		if err != nil {
+			log.Fatalf("Server failed: %v", err)
+		}
+		if err := recordServe(handler, args.root, args.record); err != nil {
+			log.Fatalf("Record failed: %v", err)
+		}
+		return
+	}
+
 	if err := srv.Serve(); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
+}
+
+// recordServe walks root and records the response body of every URL that
+// iris serve answers, into outDir (cleared first). Paths mirror the served
+// URLs verbatim: /2005/hello (converted from 2005/hello.md) is written as
+// 2005/hello. Directories and non-passthrough files yield 404 in serve
+// mode and are not recorded. The outDir itself is excluded from the walk.
+func recordServe(handler http.Handler, root, outDir string) error {
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+	outAbs, err := filepath.Abs(outDir)
+	if err != nil {
+		return err
+	}
+	if outAbs == rootAbs || strings.HasPrefix(rootAbs, outAbs+string(os.PathSeparator)) {
+		return fmt.Errorf("record dir %s contains the input root %s", outDir, root)
+	}
+	if err := os.RemoveAll(outAbs); err != nil {
+		return fmt.Errorf("clear record dir: %w", err)
+	}
+	if err := os.MkdirAll(outAbs, 0755); err != nil {
+		return err
+	}
+	seen := map[string]string{}
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if abs, aerr := filepath.Abs(path); aerr == nil &&
+				(abs == outAbs || strings.HasPrefix(abs, outAbs+string(os.PathSeparator))) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		slash := filepath.ToSlash(rel)
+		ext := strings.ToLower(filepath.Ext(slash))
+		var urlPath string
+		switch {
+		case ext == ".md" || ext == ".adoc":
+			urlPath = "/" + strings.TrimSuffix(slash, ext)
+		case mimetype.IsPassthrough(ext):
+			urlPath = "/" + slash
+		default:
+			return nil // serve answers 404 for these
+		}
+		if prev, ok := seen[urlPath]; ok {
+			log.Printf("[skip] %s: same URL already served from %s", urlPath, prev)
+			return nil
+		}
+		seen[urlPath] = rel
+
+		req := httptest.NewRequest(http.MethodGet, (&url.URL{Path: urlPath}).String(), nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			log.Printf("[%d] %s (not recorded)", rec.Code, urlPath)
+			return nil
+		}
+		outPath, err := url.PathUnescape(urlPath)
+		if err != nil {
+			return fmt.Errorf("unescape %s: %w", urlPath, err)
+		}
+		full := filepath.Join(outDir, filepath.FromSlash(strings.TrimPrefix(outPath, "/")))
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(full, rec.Body.Bytes(), 0644); err != nil {
+			return err
+		}
+		log.Printf("[200] %s -> %s", urlPath, full)
+		return nil
+	})
 }
 
 // ---------------------------------------------------------------------------
