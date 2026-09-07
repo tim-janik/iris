@@ -340,7 +340,7 @@ func ssgMain() {
 	log.Printf("Output: %s", args.outputDir)
 
 	prepareOutputDir(args.outputDir, args.clearOutput)
-	if err := templates.WriteAssets(args.outputDir, highlightScriptAsset, highlightStyleAsset); err != nil {
+	if err := templates.WriteAssets(args.outputDir, highlightScriptAsset, highlightStyleAsset, mermaidScriptAsset); err != nil {
 		log.Fatalf("write template assets: %v", err)
 	}
 

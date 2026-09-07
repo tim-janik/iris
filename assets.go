@@ -10,3 +10,6 @@ var highlightScriptAsset []byte
 
 //go:embed external/highlight.js/styles/github.min.css
 var highlightStyleAsset []byte
+
+//go:embed external/mermaid/mermaid.min.js
+var mermaidScriptAsset []byte

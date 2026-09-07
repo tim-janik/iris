@@ -53,7 +53,7 @@ func TestRenderPageUsesLocalHighlightAssets(t *testing.T) {
 
 func TestWriteAssets(t *testing.T) {
 	dir := t.TempDir()
-	if err := WriteAssets(dir, []byte("script"), []byte("style")); err != nil {
+	if err := WriteAssets(dir, []byte("script"), []byte("style"), []byte("mermaid")); err != nil {
 		t.Fatalf("WriteAssets(): %v", err)
 	}
 	for _, test := range []struct {
@@ -62,6 +62,7 @@ func TestWriteAssets(t *testing.T) {
 	}{
 		{"assets/highlight.js/highlight.min.js", "script"},
 		{"assets/highlight.js/styles/github.min.css", "style"},
+		{"assets/mermaid/mermaid.min.js", "mermaid"},
 	} {
 		name := test.name
 		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))

@@ -62,6 +62,7 @@ type SiteConfig struct {
 type PageData struct {
 	Title         string // page.title
 	Content       htmplt.HTML // page.content (rendered HTML body)
+	Mermaid       bool       // page needs mermaid.js (fenced ```mermaid block present)
 	Header        htmplt.HTML // page.header (HTML for header block)
 	FooterUpdated string // page.footer_updated
 	Keywords      []string // page.keywords
@@ -196,13 +197,14 @@ type Engine struct {
 	siteTmpl  *txtplt.Template
 }
 
-func WriteAssets(outputDir string, highlightScript, highlightStyle []byte) error {
+func WriteAssets(outputDir string, highlightScript, highlightStyle, mermaidScript []byte) error {
 	assets := []struct {
 		name string
 		data []byte
 	}{
 		{"assets/highlight.js/highlight.min.js", highlightScript},
 		{"assets/highlight.js/styles/github.min.css", highlightStyle},
+		{"assets/mermaid/mermaid.min.js", mermaidScript},
 	}
 	for _, asset := range assets {
 		name := asset.name
