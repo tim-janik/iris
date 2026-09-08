@@ -12,6 +12,9 @@
 <h1>Typo on Landing Page</h1>
 <p>Fix <q>recieve</q> -&gt; <q>receive</q>.</p>
 </section>
+<link rel="stylesheet" href="./..~meta~?asset=github.min.css">
+<script src="./..~meta~?asset=highlight.min.js"></script>
+<script>hljs.initHighlighting()</script>
 <script src="./..~meta~?asset=dashboard.js" defer></script>
 </body>
 </html>

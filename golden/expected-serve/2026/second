@@ -15,6 +15,9 @@
 <h1>Second Post</h1>
 <p>An older post, so feed and index ordering have something to sort.</p>
 </section>
+<link rel="stylesheet" href="./..~meta~?asset=github.min.css">
+<script src="./..~meta~?asset=highlight.min.js"></script>
+<script>hljs.initHighlighting()</script>
 <script src="./..~meta~?asset=dashboard.js" defer></script>
 </body>
 </html>
