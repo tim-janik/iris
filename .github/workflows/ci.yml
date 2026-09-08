@@ -13,12 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - { uses: actions/checkout@v4, with: { fetch-depth: 0 } }
-      - name: Install Pandoc
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y pandoc
+      - name: Install Pandoc and Asciidoctor
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y pandoc asciidoctor
       - { uses: actions/setup-go@v5, with: { go-version-file: go.mod, cache: true } }
       - run: make build
       - run: make bench # test
       - run: make vet
+      - run: make -C golden
 
   Ping-IRC:
     # Always run, announce trunk and tag pushes

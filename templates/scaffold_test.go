@@ -53,7 +53,7 @@ func TestRenderPageUsesLocalHighlightAssets(t *testing.T) {
 
 func TestWriteAssets(t *testing.T) {
 	dir := t.TempDir()
-	if err := WriteAssets(dir, []byte("script"), []byte("style")); err != nil {
+	if err := WriteAssets(dir, []byte("script"), []byte("style"), []byte("mermaid")); err != nil {
 		t.Fatalf("WriteAssets(): %v", err)
 	}
 	for _, test := range []struct {
@@ -62,6 +62,7 @@ func TestWriteAssets(t *testing.T) {
 	}{
 		{"assets/highlight.js/highlight.min.js", "script"},
 		{"assets/highlight.js/styles/github.min.css", "style"},
+		{"assets/mermaid/mermaid.min.js", "mermaid"},
 	} {
 		name := test.name
 		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
@@ -88,6 +89,30 @@ func TestRenderServeStylesheetHref(t *testing.T) {
 		t.Fatalf("RenderServe(): %v", err)
 	}
 	assertContains(t, string(html), `<link href="../assets/site.css" rel="stylesheet"/>`)
+}
+
+func TestRenderServeLoadsHighlightAndMermaid(t *testing.T) {
+	eng := mustNewEngine(t)
+
+	html, err := eng.RenderServe(ServeData{Mermaid: true})
+	if err != nil {
+		t.Fatalf("RenderServe(): %v", err)
+	}
+	out := string(html)
+	assertContains(t, out, `<link rel="stylesheet" href="./..~meta~?asset=github.min.css">`)
+	assertContains(t, out, `<script src="./..~meta~?asset=highlight.min.js"></script>`)
+	assertContains(t, out, `hljs.initHighlighting()`)
+	assertContains(t, out, `<script src="./..~meta~?asset=mermaid.min.js"></script>`)
+	assertContains(t, out, `mermaid.initialize({startOnLoad:true})`)
+
+	html, err = eng.RenderServe(ServeData{})
+	if err != nil {
+		t.Fatalf("RenderServe(): %v", err)
+	}
+	out = string(html)
+	assertContains(t, out, `hljs.initHighlighting()`)
+	assertNotContains(t, out, "mermaid.min.js")
+	assertNotContains(t, out, "mermaid.initialize")
 }
 
 func TestNewCustomDirWithoutServeTemplate(t *testing.T) {

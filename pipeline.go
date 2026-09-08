@@ -441,6 +441,7 @@ func renderPage(eng *templates.Engine, pg *InputPage, site templates.SiteConfig)
 			Title:          pg.Front.Title,
 			Header:         template.HTML(pg.Rendered.Header),
 			Content:        template.HTML(fullContent),
+			Mermaid:        pg.Rendered.Mermaid,
 			FooterUpdated:  footerUpdated,
 			Keywords:       pg.Front.Keywords,
 			Authors:        authors,

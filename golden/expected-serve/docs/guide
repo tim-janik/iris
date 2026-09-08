@@ -16,6 +16,9 @@
 <p>A nested page, so relative asset and root links have something to
 resolve.</p>
 </section>
+<link rel="stylesheet" href="./..~meta~?asset=github.min.css">
+<script src="./..~meta~?asset=highlight.min.js"></script>
+<script>hljs.initHighlighting()</script>
 <script src="./..~meta~?asset=dashboard.js" defer></script>
 </body>
 </html>

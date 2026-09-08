@@ -22,6 +22,9 @@
   <input name="name" type="text" placeholder="issue-name" required=""/>
 </form>
 </section>
+<link rel="stylesheet" href="./..~meta~?asset=github.min.css">
+<script src="./..~meta~?asset=highlight.min.js"></script>
+<script>hljs.initHighlighting()</script>
 <script src="./..~meta~?asset=dashboard.js" defer></script>
 </body>
 </html>

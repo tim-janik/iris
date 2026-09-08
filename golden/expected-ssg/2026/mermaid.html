@@ -77,10 +77,10 @@
 <section id="mermaid-diagrams" class="level1">
 <h1>Mermaid Diagrams</h1>
 <p>A flowchart renders client side:</p>
-<pre class="mermaid"><code>flowchart TD
+<pre class="mermaid">flowchart TD
   src[Input files] --&gt; parse[Parse source]
   parse --&gt; out[Rendered pages]
-  out --&gt; check[Diff against golden]</code></pre>
+  out --&gt; check[Diff against golden]</pre>
 <p>A Go block gets highlighted:</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> main<span class="op">()</span> <span class="op">{</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="bu">println</span><span class="op">(</span><span class="st">&#34;golden&#34;</span><span class="op">)</span></span>
@@ -111,5 +111,7 @@
 <link rel="stylesheet" href="../assets/highlight.js/styles/github.min.css">
 <script src="../assets/highlight.js/highlight.min.js"></script>
 <script>hljs.initHighlighting()</script>
+<script src="../assets/mermaid/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true})</script>
 </body>
 </html>

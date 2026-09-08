@@ -46,6 +46,9 @@ type Result struct {
 	Title string
 	// Keywords from <meta name="keywords">
 	Keywords []string
+	// Mermaid reports a fenced ```mermaid block, which needs mermaid.js
+	// to render as a diagram
+	Mermaid bool
 }
 
 // Convert runs pandoc on the given text and returns the full HTML.
@@ -99,30 +102,35 @@ func ConvertAndDisassembleWithTitle(cfg Config, data []byte, inputFormat, title 
 	if err != nil {
 		return nil, fmt.Errorf("parse HTML: %w", err)
 	}
+	unwrapMermaidCode(bodyNode(doc))
 
 	r.Title = extractTitle(doc)
 	r.Header = extractFirstH1(doc)
 	r.Content = extractBodyWithoutFirstH1(doc)
 	r.Keywords = extractKeywords(doc)
+	r.Mermaid = detectMermaid(bodyNode(doc))
 
 	return r, nil
 }
 
 // ExtractBodyAndTitle parses a full HTML document and returns the body's
-// inner HTML (including any <h1>) and the page title: the first <h1> wins,
-// falling back to <title>; pandoc's "-" title placeholder counts as empty.
+// inner HTML (including any <h1>), the page title: the first <h1> wins,
+// falling back to <title>; pandoc's "-" title placeholder counts as empty,
+// and whether the body contains a mermaid diagram block.
 // Shared by iris serve (which renders the body with its <h1> intact).
-func ExtractBodyAndTitle(htmlStr string) (body, title string) {
+func ExtractBodyAndTitle(htmlStr string) (body, title string, mermaid bool) {
 	doc, err := htmlutil.Parse(htmlStr)
 	if err != nil {
-		return htmlStr, ""
+		return htmlStr, "", false
 	}
+	unwrapMermaidCode(bodyNode(doc))
 	body = strings.TrimSpace(htmlutil.InnerHTML(bodyNode(doc)))
 	title = extractTitle(doc)
 	if title == "-" {
 		title = ""
 	}
-	return body, title
+	mermaid = detectMermaid(bodyNode(doc))
+	return body, title, mermaid
 }
 
 // bodyNode returns the <body> element, or the document root when absent
@@ -184,4 +192,39 @@ func extractKeywords(doc *html.Node) []string {
 		}
 	}
 	return keywords
+}
+
+// detectMermaid reports whether body contains an element with class
+// "mermaid"; pandoc emits one <pre class="mermaid"> per fenced block.
+func detectMermaid(body *html.Node) bool {
+	found := htmlutil.FindAll(body, func(n *html.Node) bool {
+		return n.Type == html.ElementNode && hasClass(n, "mermaid")
+	})
+	return len(found) > 0
+}
+
+// unwrapMermaidCode replaces <pre class="mermaid"><code>…</code></pre>
+// with plain text content; mermaid's run() reads innerHTML, so nested
+// markup would corrupt the diagram source.
+func unwrapMermaidCode(body *html.Node) {
+	for _, pre := range htmlutil.FindAll(body, func(n *html.Node) bool {
+		return n.Type == html.ElementNode && n.Data == "pre" && hasClass(n, "mermaid")
+	}) {
+		text := htmlutil.Text(pre)
+		for c := pre.FirstChild; c != nil; {
+			next := c.NextSibling
+			htmlutil.Remove(c)
+			c = next
+		}
+		htmlutil.AppendChild(pre, &html.Node{Type: html.TextNode, Data: text})
+	}
+}
+
+func hasClass(n *html.Node, class string) bool {
+	for _, c := range strings.Fields(htmlutil.GetAttr(n, "class")) {
+		if c == class {
+			return true
+		}
+	}
+	return false
 }

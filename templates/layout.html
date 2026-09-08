@@ -135,6 +135,11 @@
 <link rel="stylesheet" href="{{.Root}}/assets/highlight.js/styles/github.min.css">
 <script src="{{.Root}}/assets/highlight.js/highlight.min.js"></script>
 <script>hljs.initHighlighting()</script>
+{{- /* mermaid.js renders fenced ```mermaid blocks client-side. */}}
+{{- if .Page.Mermaid}}
+<script src="{{.Root}}/assets/mermaid/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true})</script>
+{{- end}}
 {{- end}}
 
 {{- define "index_title"}}{{- end}}

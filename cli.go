@@ -200,14 +200,17 @@ func serveMain() {
 	site := loadSiteConfig(args.root, configFile)
 
 	srv := &serve.Server{
-		Root:         args.root,
-		Port:         args.port,
-		PandocConfig: pandoc.DefaultConfig(),
-		AdocConfig:   adoc.DefaultConfig(),
-		EditLinkCmd:  args.editLinkCmd,
-		TemplateDir:  args.templateDir,
-		FaviconPath:  args.faviconPath,
-		Site:         toTemplateSite(site),
+		Root:            args.root,
+		Port:            args.port,
+		PandocConfig:    pandoc.DefaultConfig(),
+		AdocConfig:      adoc.DefaultConfig(),
+		EditLinkCmd:     args.editLinkCmd,
+		TemplateDir:     args.templateDir,
+		FaviconPath:     args.faviconPath,
+		Site:            toTemplateSite(site),
+		HighlightScript: highlightScriptAsset,
+		HighlightStyle:  highlightStyleAsset,
+		MermaidScript:   mermaidScriptAsset,
 	}
 
 	if args.record != "" {
@@ -340,7 +343,7 @@ func ssgMain() {
 	log.Printf("Output: %s", args.outputDir)
 
 	prepareOutputDir(args.outputDir, args.clearOutput)
-	if err := templates.WriteAssets(args.outputDir, highlightScriptAsset, highlightStyleAsset); err != nil {
+	if err := templates.WriteAssets(args.outputDir, highlightScriptAsset, highlightStyleAsset, mermaidScriptAsset); err != nil {
 		log.Fatalf("write template assets: %v", err)
 	}
 

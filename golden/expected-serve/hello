@@ -37,12 +37,15 @@ bare URL that auto-links: <a href="https://example.org/auto" class="uri">https:/
 </table>
 <p>An inline footnote<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>.</p>
 </section>
-<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<aside id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
 <hr/>
 <ol>
 <li id="fn1"><p>The footnote text.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
-</section>
+</aside>
+<link rel="stylesheet" href="./..~meta~?asset=github.min.css">
+<script src="./..~meta~?asset=highlight.min.js"></script>
+<script>hljs.initHighlighting()</script>
 <script src="./..~meta~?asset=dashboard.js" defer></script>
 </body>
 </html>
