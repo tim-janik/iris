@@ -11,6 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install Pandoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y pandoc
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
