@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>Issue Dashboard | golden master fixtures</title>
+  <style>body{max-width:99em;margin:0 auto}</style>
+  <link href="./assets/site.css" rel="stylesheet"/>
+</head>
+<body class="serve ">
+<header id="title-block-header">
+<h1 class="title">Issue Dashboard</h1>
+</header>
+<section id="issue-dashboard" class="level1">
+<h1>Issue Dashboard</h1>
+<div class="dashboard-widget" data-view="cards" data-filter="status:open" data-limit="15">
+
+</div>
+<p>New issues are created through a form wrapped in a
+<code>{=html}</code> raw block:</p>
+<form class="dashboard-new">
+  <input name="name" type="text" placeholder="issue-name" required=""/>
+</form>
+</section>
+<script src="./..~meta~?asset=dashboard.js" defer></script>
+</body>
+</html>

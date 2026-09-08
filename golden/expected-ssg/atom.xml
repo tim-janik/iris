@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xml:lang="en" xmlns="http://www.w3.org/2005/Atom">
+  <title type="text">Golden Test Site</title>
+  <subtitle type="text">golden master fixtures</subtitle>
+  <id>https://golden.example.org/feed.xml</id>
+  <link rel="self" type="application/atom+xml" href="https://golden.example.org/feed.xml"/>
+  <link rel="alternate" type="text/html" href="https://golden.example.org"/>
+  <author><name>Golden Author</name></author>
+  <rights>CC0</rights>
+  <icon>https://golden.example.org/favicon.ico</icon>
+  <generator uri="https://github.com/tim-janik/iris/">Iris</generator>
+  <entry>
+    <id>https://golden.example.org/2026/mermaid</id>
+    <title>Mermaid Diagrams</title>
+    <updated>2026-09-08T03:07:06Z</updated>
+    <published>2026-06-01T00:00:00Z</published>
+    <link rel="alternate" href="2026/mermaid"/>
+    <category term="mermaid"/>
+    <category term="test"/>
+    <summary>Mermaid Diagrams A flowchart renders client side: flowchart TD src[Input files] --&gt; parse[Parse source] parse --&gt; out[Rendered pages] out --&gt; check[Diff against golden] A Go block gets highlighted: func main() { println(&#34;golden&#34;) }</summary>
+  </entry>
+  <entry>
+    <id>https://golden.example.org/2026/second</id>
+    <title>Second Post</title>
+    <updated>2026-09-08T03:07:06Z</updated>
+    <published>2026-04-02T00:00:00Z</published>
+    <link rel="alternate" href="2026/second"/>
+    <summary>Second Post An older post, so feed and index ordering have something to sort.</summary>
+  </entry>
+  <updated>2026-06-01T00:00:00Z</updated>
+</feed>

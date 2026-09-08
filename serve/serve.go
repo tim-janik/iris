@@ -354,7 +354,7 @@ func handleMetadataRoute(w http.ResponseWriter, r *http.Request, root string) bo
 }
 
 // Serve starts the HTTP server and blocks until the server exits or errors.
-func (s *Server) Serve() error {
+func (s *Server) Handler() (http.Handler, error) {
 	if s.PandocConfig.InputFormat == "" {
 		s.PandocConfig = pandoc.DefaultConfig()
 	}
@@ -364,7 +364,7 @@ func (s *Server) Serve() error {
 
 	eng, err := templates.New(s.TemplateDir)
 	if err != nil {
-		return fmt.Errorf("init templates: %w", err)
+		return nil, fmt.Errorf("init templates: %w", err)
 	}
 
 	cfg := s.PandocConfig
@@ -545,7 +545,15 @@ func (s *Server) Serve() error {
 	if s.EditLinkCmd != "" {
 		handler = editlink.Handler(editlink.Config{Cmd: s.EditLinkCmd}, mux, s.Root)
 	}
+	return handler, nil
+}
 
+// Serve listens and serves until the server exits or errors.
+func (s *Server) Serve() error {
+	handler, err := s.Handler()
+	if err != nil {
+		return err
+	}
 	addr := fmt.Sprintf(":%d", s.Port)
 	log.Printf("Serve running at http://localhost%s/", addr)
 	log.Printf("Root: %s", s.Root)

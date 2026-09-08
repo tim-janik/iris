@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>Typo on Landing Page | golden master fixtures</title>
+  <style>body{max-width:99em;margin:0 auto}</style>
+  <link href="../assets/site.css" rel="stylesheet"/>
+</head>
+<body class="serve ">
+<section id="typo-on-landing-page" class="level1">
+<h1>Typo on Landing Page</h1>
+<p>Fix <q>recieve</q> -&gt; <q>receive</q>.</p>
+</section>
+<script src="./..~meta~?asset=dashboard.js" defer></script>
+</body>
+</html>

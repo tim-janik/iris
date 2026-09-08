@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>User Guide | golden master fixtures</title>
+  <style>body{max-width:99em;margin:0 auto}</style>
+  <link href="../assets/site.css" rel="stylesheet"/>
+</head>
+<body class="serve ">
+<header id="title-block-header">
+<h1 class="title">User Guide</h1>
+</header>
+<section id="user-guide" class="level1">
+<h1>User Guide</h1>
+<p>A nested page, so relative asset and root links have something to
+resolve.</p>
+</section>
+<script src="./..~meta~?asset=dashboard.js" defer></script>
+</body>
+</html>

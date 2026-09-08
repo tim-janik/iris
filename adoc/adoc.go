@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -28,6 +29,7 @@ func DefaultConfig() Config {
 			"Cxx=C++", "Cxx11=C++11", "Cxx14=C++14", "Cxx17=C++17",
 			"skip-front-matter",
 			"linkattrs",
+			"reproducible",
 			"sectanchors",
 			"idprefix=",
 			"idseparator=-",
@@ -132,22 +134,18 @@ type Result struct {
 
 // Convert runs asciidoctor on the given adoc text and returns the full HTML.
 func Convert(cfg Config, adocData []byte) (string, error) {
-	// asciidoctor needs a file path, not stdin
-	tmpFile, err := os.CreateTemp("", "adoc-*.adoc")
+	// asciidoctor needs a file path, not stdin. The random directory keeps
+	// parallel conversions unique, the fixed file name keeps asciidoctor
+	// error messages (which embed the file name) reproducible.
+	tmpDir, err := os.MkdirTemp("", "iris-adoc-")
 	if err != nil {
-		return "", fmt.Errorf("create temp file: %w", err)
+		return "", fmt.Errorf("create temp dir: %w", err)
 	}
-	tmpPath := tmpFile.Name()
-	defer func() {
-		tmpFile.Close()
-		os.Remove(tmpPath)
-	}()
+	defer os.RemoveAll(tmpDir)
+	tmpPath := filepath.Join(tmpDir, "source.adoc")
 
-	if _, err := tmpFile.Write(adocData); err != nil {
+	if err := os.WriteFile(tmpPath, adocData, 0644); err != nil {
 		return "", fmt.Errorf("write temp file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return "", fmt.Errorf("close temp file: %w", err)
 	}
 
 	cmd := exec.Command("asciidoctor")

@@ -1,0 +1,37 @@
+---
+published: 2026-02-20
+---
+
+= About Golden
+
+An intro with *bold*, _italic_, `mono`, and https://example.org/adoc[link text].
+
+== Sections
+
+=== Nested Section
+
+A footnote footnote:[extra detail here] and a source block:
+
+[source,go]
+----
+func main() {
+	println("golden")
+}
+----
+
+== Lists
+
+* item one
+* item two
+
+|===
+| Col A | Col B
+
+| one
+| two
+|===
+
+[NOTE]
+====
+An admonition note.
+====
