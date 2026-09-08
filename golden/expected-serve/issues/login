@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>Login Broken | golden master fixtures</title>
+  <style>body{max-width:99em;margin:0 auto}</style>
+  <link href="../assets/site.css" rel="stylesheet"/>
+</head>
+<body class="serve ">
+<section id="login-broken" class="level1">
+<h1>Login Broken</h1>
+<p>The login form rejects valid credentials.</p>
+<ul>
+<li>reproduce with a fresh session</li>
+<li>check the session cookie domain</li>
+</ul>
+</section>
+<script src="./..~meta~?asset=dashboard.js" defer></script>
+</body>
+</html>

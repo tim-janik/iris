@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"
+     xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <language>en</language>
+    <title>Golden Test Site</title>
+    <description>golden master fixtures</description>
+    <link>https://golden.example.org/</link>
+    <atom:link rel="self" type="application/rss+xml" href="https://golden.example.org/feed.xml"/>
+    <ttl>60</ttl>
+    <dc:creator>Golden Author</dc:creator>
+    <copyright>CC0</copyright>
+    <image>
+      <title>Golden Test Site</title>
+      <url>https://golden.example.org/favicon.ico</url>
+      <link>https://golden.example.org/</link>
+    </image>
+    <generator>Iris - https://github.com/tim-janik/iris/</generator>
+    <item>
+      <title>Mermaid Diagrams</title>
+      <link>https://golden.example.org/2026/mermaid</link>
+      <guid isPermaLink="true">https://golden.example.org/2026/mermaid</guid>
+      <pubDate>Mon, 01 Jun 2026 00:00:00 +0000</pubDate>
+      <source url="https://golden.example.org/feed.xml">Golden Test Site</source>
+      <category>mermaid</category>
+      <category>test</category>
+      <description>Mermaid Diagrams A flowchart renders client side: flowchart TD src[Input files] --&gt; parse[Parse source] parse --&gt; out[Rendered pages] out --&gt; check[Diff against golden] A Go block gets highlighted: func main() { println(&#34;golden&#34;) }</description>
+    </item>
+    <item>
+      <title>Second Post</title>
+      <link>https://golden.example.org/2026/second</link>
+      <guid isPermaLink="true">https://golden.example.org/2026/second</guid>
+      <pubDate>Thu, 02 Apr 2026 00:00:00 +0000</pubDate>
+      <source url="https://golden.example.org/feed.xml">Golden Test Site</source>
+      <description>Second Post An older post, so feed and index ordering have something to sort.</description>
+    </item>
+    <lastBuildDate>Mon, 01 Jun 2026 00:00:00 +0000</lastBuildDate>
+  </channel>
+</rss>

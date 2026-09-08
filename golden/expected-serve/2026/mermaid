@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>Mermaid Diagrams | golden master fixtures</title>
+  <style>body{max-width:99em;margin:0 auto}</style>
+  <link href="../assets/site.css" rel="stylesheet"/>
+</head>
+<body class="serve ">
+<header id="title-block-header">
+<h1 class="title">Mermaid Diagrams</h1>
+</header>
+<section id="mermaid-diagrams" class="level1">
+<h1>Mermaid Diagrams</h1>
+<p>A flowchart renders client side:</p>
+<pre class="mermaid"><code>flowchart TD
+  src[Input files] --&gt; parse[Parse source]
+  parse --&gt; out[Rendered pages]
+  out --&gt; check[Diff against golden]</code></pre>
+<p>A Go block gets highlighted:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> main<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="bu">println</span><span class="op">(</span><span class="st">&#34;golden&#34;</span><span class="op">)</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+</section>
+<script src="./..~meta~?asset=dashboard.js" defer></script>
+</body>
+</html>

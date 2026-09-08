@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>Second Post | golden master fixtures</title>
+  <style>body{max-width:99em;margin:0 auto}</style>
+  <link href="../assets/site.css" rel="stylesheet"/>
+</head>
+<body class="serve ">
+<header id="title-block-header">
+<h1 class="title">Second Post</h1>
+</header>
+<section id="second-post" class="level1">
+<h1>Second Post</h1>
+<p>An older post, so feed and index ordering have something to sort.</p>
+</section>
+<script src="./..~meta~?asset=dashboard.js" defer></script>
+</body>
+</html>
