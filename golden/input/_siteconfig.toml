@@ -1,0 +1,9 @@
+title = "Golden Test Site"
+slogan = "golden master fixtures"
+url = "https://golden.example.org"
+feed_url = "https://golden.example.org/feed.xml"
+copyright = "CC0"
+authors = ["Golden Author"]
+stylesheet = "assets/site.css"
+include_glob = ["**"]
+asset_glob = ["assets/**"]
