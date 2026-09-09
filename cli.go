@@ -286,11 +286,12 @@ func recordServe(handler http.Handler, root, outDir string) error {
 			log.Printf("[%d] %s (not recorded)", rec.Code, urlPath)
 			return nil
 		}
-		outPath, err := url.PathUnescape(urlPath)
-		if err != nil {
-			return fmt.Errorf("unescape %s: %w", urlPath, err)
+		record_path := strings.TrimPrefix(urlPath, "/")
+		full := filepath.Join(outAbs, filepath.FromSlash(record_path))
+		record_rel, err := filepath.Rel(outAbs, full)
+		if err != nil || !filepath.IsLocal(record_rel) || record_rel == "." {
+			return fmt.Errorf("record path escapes output directory: %s", record_path)
 		}
-		full := filepath.Join(outDir, filepath.FromSlash(strings.TrimPrefix(outPath, "/")))
 		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
 			return err
 		}
