@@ -1,9 +1,3 @@
-{{/*
-  post.html - Template for blog post pages.
-  Overrides content to add comment section (Jinja2 super() equivalent).
-  Overrides head_style and body_js for post-specific content.
-*/}}
-
 {{- define "content"}}{{.Page.Content}}
 
 <div class="commentsect">
@@ -29,9 +23,6 @@
   }
   #sitenav span { font-weight: bolder; padding: 0 0.3em; }
   #sitenav span:hover { background-color: #eef; border-radius: 3px; }
-  IGNORE #sitenav a { color: inherit; }
-  IGNORE #sitenav a { color: #333; }
-  #sitenav .sitehome {  }
 </style>
 {{- end}}
 

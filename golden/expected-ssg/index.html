@@ -12,7 +12,6 @@
     a:visited    { color: #2866bb; }
     .text-center { text-align: center; }
   </style>
-  <!-- link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.css" rel="stylesheet"/> -->
   <link rel="schema.DC" href="http://purl.org/dc/elements/1.1/">  <link rel="alternate" type="application/rss+xml" title="Feed" href="https://golden.example.org/feed.xml" />
   <style>
     #sitenav {
@@ -21,15 +20,12 @@
     }
     #sitenav span { font-weight: bolder; padding: 0 0.3em; }
     #sitenav span:hover { background-color: #eef; border-radius: 3px; }
-    IGNORE #sitenav a { color: inherit; }
-    IGNORE #sitenav a { color: #333; }
-    #sitenav .sitehome {  }
   </style>
 </head>
 <body class="page-siteindex_ dirindex">
 
 <div id="sitehead"
-     style="-x-background-color:#ff8; max-width: 45em;
+     style="max-width: 45em;
 	    display: flex;
 	    justify-content: space-between;
 	    align-items: center;
@@ -48,10 +44,8 @@
   </div>
   <div id="siteprojects">
     <span><a href="./projects">Projects</a></span>
-    <!-- <span><a href="https://beast.testbit.org" target="_blank">Beast</a></span> -->
   </div>
   <div id="sitenavlinks">
-    <!-- <span><a href="tops.html">TOPs</a></span> -->
     <span><a href="./timj" title="Contact">Contact</a></span>
     <span><a href="https://social.tchncs.de/@timj" rel="me" title="@timj (Mastodon)" target="_blank">@timj</a></span>
     <span><a href="https://www.google.com/search?q=site:https://testbit.eu/" target="_blank">Search</a></span>
@@ -70,23 +64,13 @@
     
   </div>
 
-  <div style="display: flex; justify-content: space-evenly; color: #888; display: none">
-    <span><a href="./projects">Projects</a></span>
-    &nbsp;
-    <span><a href="./timj" title="Contact">TimJ</a></span>
-    &nbsp;
-    <span><a href="https://github.com/tim-janik/">Github</a></span>
-  </div>
-
-  
-
 </div>
 
 
 
 
 <ul>
-  <div class="postlist">
+  <li class="postlist">
     <div class="linktitle"><a href="2026/mermaid">Mermaid Diagrams</a></div>
     <div class="linksubtitle">
       <a class="linkdate" href="2026/mermaid">2026-06-01</a>
@@ -96,30 +80,27 @@
     </div>
     <div class="linkdesc">Mermaid Diagrams A flowchart renders client side: flowchart TD src[Input files] --&gt; parse[Parse source] parse --&gt; out[Rendered pages] out --&gt; check[Diff against golden] A Go block gets highlighted: func main() { println(&#34;golden&#34;) }</div>
     <div class="linkmore"><a href="2026/mermaid">Continue reading</a></div>
-  </div>
-  <div class="postlist">
+  </li>
+  <li class="postlist">
     <div class="linktitle"><a href="2026/second">Second Post</a></div>
     <div class="linksubtitle">
       <a class="linkdate" href="2026/second">2026-04-02</a>
     </div>
     <div class="linkdesc">Second Post An older post, so feed and index ordering have something to sort.</div>
     <div class="linkmore"><a href="2026/second">Continue reading</a></div>
-  </div>
+  </li>
+</ul>
   <style>
-    #content .postlist			{ margin: 2em 0; }
+    #content .postlist			{ list-style: none; margin: 2em 0; }
     #content .postlist:first-of-type	{ margin-top: 3em; }
-    #content .postlist .linktitle	{ font-size: 125%; font-weight: bold; -x-color: inherit;
-      					  line-height: 1.3; display: inline-block; -x-margin-bottom: .3rem; }
+    #content .postlist .linktitle	{ font-size: 125%; font-weight: bold;
+      line-height: 1.3; display: inline-block; }
     #content .postlist .linksubtitle	{ margin-bottom: 0.5em; color: #888; }
     #content .postlist .linkdate   	{ color: #888; }
-    #content .postlist .linksep   	{ }
-    #content .postlist .linkkeywords  	{ }
 
-    #content .postlist .linkmore	{ color: inherit; }
     #content .postlist .linkmore	{ text-align: center; color: #444; letter-spacing: 0.1rem;
       					  font-variant: small-caps; font-variant-caps: all-small-caps; }
   </style>
-</ul>
 </div>
 
 <div id="footer">

@@ -282,5 +282,3 @@ func formatPriority(raw int) string {
 func daysSince(t, now time.Time) int {
 	return int(now.Sub(t).Hours() / 24)
 }
-
-// newFeedItem creates a FeedItem from an InputPage.

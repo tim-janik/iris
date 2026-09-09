@@ -43,16 +43,15 @@ Or build a local binary:
 
 ```sh
 make build		# needs Go, pandoc and asciidoctor on PATH
-./iris -h
+./iris ssg -h
 ```
 
 
 ## Use
 
-Run the tool with `-h` to see all flags and examples:
+Run a subcommand with `-h` to see its flags:
 
 ```sh
-iris -h
 iris ssg -h
 iris serve -h
 iris index -h
