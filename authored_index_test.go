@@ -11,24 +11,24 @@ import (
 func TestAuthoredIndexContentIsRendered(t *testing.T) {
 	eng := mustTestEngine(t)
 	for _, test := range []struct {
-		name  string
-		type_ pageclass.PageType
+		name   string
+		pgType pageclass.PageType
 	}{
-		{name: "root", type_: pageclass.PageTopIndex},
-		{name: "nested", type_: pageclass.PageDirIndex},
+		{name: "root", pgType: pageclass.PageTopIndex},
+		{name: "nested", pgType: pageclass.PageDirIndex},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			page := testInputPage(t, test.name+"/index.md", "Index", test.type_)
-			page.Rendered.Content = "<p>Authored index text</p>"
-			if test.type_ == pageclass.PageTopIndex {
-				page = testInputPage(t, "index.md", "Index", test.type_)
-				page.Rendered.Content = "<p>Authored index text</p>"
+			relPath := test.name + "/index.md"
+			if test.pgType == pageclass.PageTopIndex {
+				relPath = "index.md"
 			}
+			page := testInputPage(t, relPath, "Index", test.pgType)
+			page.Rendered.Content = "<p>Authored index text</p>"
 			html, err := renderPage(eng, page, templates.SiteConfig{Title: "Site"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(string(html), "Authored index text") {
+			if !strings.Contains(string(html), "<p>Authored index text</p>") {
 				t.Fatalf("rendered index omitted authored body: %s", html)
 			}
 		})
