@@ -35,6 +35,17 @@ func handleEditQuery(cfg Config, w http.ResponseWriter, r *http.Request, srcPath
 	if edlStr == "" {
 		return false
 	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return true
+	}
+	if cfg.Token != "" {
+		cookie, err := r.Cookie("iris-action-token")
+		if err != nil || cookie.Value != cfg.Token {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return true
+		}
+	}
 
 	lineNum, err := strconv.Atoi(edlStr)
 	if err != nil {

@@ -281,3 +281,64 @@ func TestServeRootPrefix(t *testing.T) {
 		}
 	}
 }
+
+func TestActionAuthorization(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "tasks"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{Root: root}
+	handler, err := server.Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(origin, token string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "http://example.com/tasks/..~meta~?cmd=create-file&name=authorized.md", strings.NewReader("body"))
+		req.Header.Set("Host", "example.com")
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		if token != "" {
+			req.AddCookie(&http.Cookie{Name: "iris-action-token", Value: token})
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+	if got := request("", ""); got.Code != http.StatusForbidden {
+		t.Fatalf("missing credentials status = %d", got.Code)
+	}
+	if got := request("http://evil.example", server.actionToken); got.Code != http.StatusForbidden {
+		t.Fatalf("foreign origin status = %d", got.Code)
+	}
+	if got := request("http://example.com/path", server.actionToken); got.Code != http.StatusForbidden {
+		t.Fatalf("origin with path status = %d", got.Code)
+	}
+	if got := request("http://example.com", server.actionToken); got.Code != http.StatusCreated {
+		t.Fatalf("authorized status = %d, body = %s", got.Code, got.Body)
+	}
+	if _, err := os.Stat(filepath.Join(root, "tasks", "authorized.md")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestActionCookieAndListenAddress(t *testing.T) {
+	server := &Server{Root: t.TempDir(), Port: 9454}
+	handler, err := server.Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/..~meta~?cmd=get-frontmatter-array", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	cookie := rec.Result().Cookies()
+	if len(cookie) != 1 || cookie[0].Name != "iris-action-token" || !cookie[0].HttpOnly || cookie[0].SameSite != http.SameSiteStrictMode {
+		t.Fatalf("action cookie = %#v", cookie)
+	}
+	if got := (&Server{Port: 9454}).listenAddress(); got != "127.0.0.1:9454" {
+		t.Fatalf("default listen address = %q", got)
+	}
+	if got := (&Server{ListenHost: "0.0.0.0", Port: 9454}).listenAddress(); got != "0.0.0.0:9454" {
+		t.Fatalf("explicit listen address = %q", got)
+	}
+}

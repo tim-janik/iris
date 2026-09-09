@@ -107,7 +107,7 @@ func InjectEditLinks(htmlStr string, srcPath string) (string, error) {
 
 		// Build edit link using javascript:void(fetch(...)) so the browser
 		// does not navigate away from the page (same as the Python reference).
-		jsHref := fmt.Sprintf("javascript:void(fetch('?edl=%d', {'cache':'no-cache'}))", lineNum)
+		jsHref := fmt.Sprintf("javascript:void(fetch('?edl=%d', {method:'POST', cache:'no-cache'}))", lineNum)
 		linkNode := &html.Node{
 			Type: html.ElementNode,
 			Data: "a",
@@ -135,7 +135,7 @@ func InjectEditLinks(htmlStr string, srcPath string) (string, error) {
 		Data: "a",
 		Attr: []html.Attribute{
 			{Key: "class", Val: "iris-edit"},
-			{Key: "href", Val: "javascript:void(fetch('?edl=0', {'cache':'no-cache'}))"},
+			{Key: "href", Val: "javascript:void(fetch('?edl=0', {method:'POST', cache:'no-cache'}))"},
 			{Key: "title", Val: "Edit Document [e]"},
 			{Key: "accesskey", Val: "e"},
 			{Key: "style", Val: "display:none"},
