@@ -158,6 +158,7 @@ func parseInitArgs() string {
 type serveArgs struct {
 	root        string // directory containing markdown files
 	port        int    // TCP port to listen on
+	listenHost  string // host address to listen on
 	record      string // record serve responses under this directory, then exit
 	editLinkCmd string // command template for edit links (empty = disabled)
 	templateDir string // custom template directory (overrides embedded templates)
@@ -168,6 +169,7 @@ type serveArgs struct {
 func parseServeArgs() serveArgs {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	port := fs.Int("port", 9454, "TCP port to listen on (default: 9454)")
+	listenHost := fs.String("listen", "127.0.0.1", "host address to listen on (default: 127.0.0.1)")
 	record := fs.String("record", "", "record serve responses for all served files under root into this directory (cleared first) and exit")
 	editLinkCmd := fs.String("editlink", "", "command template to open source file in editor (empty = disabled); use %s for file path, %u for line number")
 	templateDir := fs.String("t", "", "custom template directory (overrides embedded templates)")
@@ -181,7 +183,7 @@ func parseServeArgs() serveArgs {
 	}
 
 	root, _ := filepath.Abs(args[0])
-	return serveArgs{root: root, port: *port, record: *record, editLinkCmd: *editLinkCmd, templateDir: *templateDir, faviconPath: *faviconPath}
+	return serveArgs{root: root, port: *port, listenHost: *listenHost, record: *record, editLinkCmd: *editLinkCmd, templateDir: *templateDir, faviconPath: *faviconPath}
 }
 
 // serveMain is the main entry point for the serve subcommand.
@@ -202,6 +204,7 @@ func serveMain() {
 	srv := &serve.Server{
 		Root:            args.root,
 		Port:            args.port,
+		ListenHost:      args.listenHost,
 		PandocConfig:    pandoc.DefaultConfig(),
 		AdocConfig:      adoc.DefaultConfig(),
 		EditLinkCmd:     args.editLinkCmd,

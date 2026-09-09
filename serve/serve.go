@@ -5,13 +5,17 @@
 package serve
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
 	_ "embed"
 	"encoding/json"
 	"fmt"
 	htmplt "html/template"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -52,6 +56,8 @@ type Server struct {
 	Root string
 	// Port is the TCP port the server listens on.
 	Port int
+	// ListenHost is the host address the server listens on. Empty uses loopback.
+	ListenHost string
 	// PandocConfig controls pandoc invocation; zero value uses defaults.
 	PandocConfig pandoc.Config
 	// AdocConfig controls asciidoctor invocation; zero value uses defaults.
@@ -76,6 +82,44 @@ type Server struct {
 	HighlightScript []byte
 	HighlightStyle  []byte
 	MermaidScript   []byte
+	actionToken     string
+}
+
+func newActionToken() (string, error) {
+	data := make([]byte, 32)
+	if _, err := rand.Read(data); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", data), nil
+}
+
+func actionRequest(r *http.Request) bool {
+	return r.URL.Query().Get("cmd") == "create-file" || r.URL.Query().Has("edl")
+}
+
+func sameOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	return err == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "" &&
+		(u.Scheme == "http" || u.Scheme == "https") && u.Host == r.Host
+}
+
+func (s *Server) authorizedAction(r *http.Request) bool {
+	if s.actionToken == "" || !sameOrigin(r) {
+		return false
+	}
+	cookie, err := r.Cookie("iris-action-token")
+	return err == nil && subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(s.actionToken)) == 1
+}
+
+func (s *Server) setActionCookie(w http.ResponseWriter) {
+	if s.actionToken == "" {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: "iris-action-token", Value: s.actionToken, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
 }
 
 // normalizePath ensures the URL path starts with a slash.
@@ -383,6 +427,13 @@ func (s *Server) servePageAsset(w http.ResponseWriter, r *http.Request, name str
 
 // Serve starts the HTTP server and blocks until the server exits or errors.
 func (s *Server) Handler() (http.Handler, error) {
+	if s.actionToken == "" {
+		var err error
+		s.actionToken, err = newActionToken()
+		if err != nil {
+			return nil, fmt.Errorf("create action token: %w", err)
+		}
+	}
 	if s.PandocConfig.InputFormat == "" {
 		s.PandocConfig = pandoc.DefaultConfig()
 	}
@@ -573,9 +624,24 @@ func (s *Server) Handler() (http.Handler, error) {
 
 	handler := http.Handler(mux)
 	if s.EditLinkCmd != "" {
-		handler = editlink.Handler(editlink.Config{Cmd: s.EditLinkCmd}, mux, s.Root)
+		handler = editlink.Handler(editlink.Config{Cmd: s.EditLinkCmd, Token: s.actionToken}, mux, s.Root)
 	}
-	return handler, nil
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.setActionCookie(w)
+		if actionRequest(r) && !s.authorizedAction(r) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}), nil
+}
+
+func (s *Server) listenAddress() string {
+	host := s.ListenHost
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, fmt.Sprintf("%d", s.Port))
 }
 
 // Serve listens and serves until the server exits or errors.
@@ -584,8 +650,8 @@ func (s *Server) Serve() error {
 	if err != nil {
 		return err
 	}
-	addr := fmt.Sprintf(":%d", s.Port)
-	log.Printf("Serve running at http://localhost%s/", addr)
+	addr := s.listenAddress()
+	log.Printf("Serve running at http://%s/", addr)
 	log.Printf("Root: %s", s.Root)
 	return http.ListenAndServe(addr, handler)
 }

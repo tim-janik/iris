@@ -18,7 +18,8 @@ type Config struct {
 	//
 	// Example:
 	//   gnome-terminal --geometry=132x50 -- $EDITOR +%u %s
-	Cmd string
+	Cmd   string
+	Token string
 }
 
 // OpenEditor opens the source file in the user's editor, jumping to the
