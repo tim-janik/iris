@@ -155,10 +155,10 @@ func generateSitemap(eng *templates.Engine, pages []*InputPage, site SiteConfig,
 	if err != nil {
 		return fmt.Errorf("render sitemap: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(outputDir, "sitemap.xml"), xml, 0644); err != nil {
-		return fmt.Errorf("write sitemap.xml: %w", err)
+	if err := os.WriteFile(filepath.Join(outputDir, templates.SitemapPath), xml, 0644); err != nil {
+		return fmt.Errorf("write %s: %w", templates.SitemapPath, err)
 	}
-	log.Printf("  sitemap -> sitemap.xml")
+	log.Printf("  sitemap -> %s", templates.SitemapPath)
 	return nil
 }
 
@@ -204,7 +204,7 @@ func specialScore(loc string) int {
 	if u, err := url.Parse(loc); err == nil && u.Path != "" {
 		path = u.Path
 	}
-	if path == "/sitemap.xml" || path == "/index.html" || path == "/index.htm" || path == "/" {
+	if path == "/"+templates.SitemapPath || path == "/index.html" || path == "/index.htm" || path == "/" {
 		return +10
 	}
 	if strings.Contains(path, "/index.htm") {

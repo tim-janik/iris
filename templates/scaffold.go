@@ -230,9 +230,9 @@ func WriteAssets(outputDir string, highlightScript, highlightStyle, mermaidScrip
 		name string
 		data []byte
 	}{
-		{"assets/highlight.js/highlight.min.js", highlightScript},
-		{"assets/highlight.js/styles/github.min.css", highlightStyle},
-		{"assets/mermaid/mermaid.min.js", mermaidScript},
+		{HighlightScriptPath, highlightScript},
+		{HighlightStylePath, highlightStyle},
+		{MermaidScriptPath, mermaidScript},
 	}
 	for _, asset := range assets {
 		name := asset.name

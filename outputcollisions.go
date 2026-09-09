@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/tim-janik/iris/templates"
 )
 
 func outputPathForInput(rel string) string {
@@ -43,12 +45,12 @@ func validateOutputCollisions(paths []string) error {
 		}
 	}
 	for _, generated := range []string{
-		"assets/highlight.js/highlight.min.js",
-		"assets/highlight.js/styles/github.min.css",
-		"assets/mermaid/mermaid.min.js",
-		"rss2.xml",
-		"atom.xml",
-		"sitemap.xml",
+		templates.HighlightScriptPath,
+		templates.HighlightStylePath,
+		templates.MermaidScriptPath,
+		templates.RSSFeedPath,
+		templates.AtomFeedPath,
+		templates.SitemapPath,
 	} {
 		if err := add(generated, "generated "+generated); err != nil {
 			return err
@@ -61,9 +63,6 @@ func validateOutputCollisions(paths []string) error {
 		}
 		dir := filepath.ToSlash(filepath.Dir(outputPathForInput(rel)))
 		index := filepath.Join(dir, "index.html")
-		if dir == "." {
-			index = "index.html"
-		}
 		if _, exists := outputs[filepath.ToSlash(index)]; exists {
 			continue
 		}
