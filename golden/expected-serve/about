@@ -95,13 +95,6 @@
 <div id="footer-text">
 </div>
 </div>
-<script src="assets/highlight.js//highlight.min.js"></script>
-<script>
-if (!hljs.initHighlighting.called) {
-  hljs.initHighlighting.called = true
-  ;[].slice.call(document.querySelectorAll('pre.highlight > code[data-lang]')).forEach(function (el) { hljs.highlightBlock(el) })
-}
-</script>
 <link rel="stylesheet" href="./..~meta~?asset=github.min.css">
 <script src="./..~meta~?asset=highlight.min.js"></script>
 <script>hljs.initHighlighting()</script>

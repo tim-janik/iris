@@ -577,6 +577,7 @@ func (s *Server) Handler() (http.Handler, error) {
 				http.Error(w, fmt.Sprintf("Internal Server Error: %v", convErr), http.StatusInternalServerError)
 				return
 			}
+			htmlStr = adoc.RemoveHighlightScripts(htmlStr)
 			bodyContent, convertedTitle, pageMermaid = pandoc.ExtractBodyAndTitle(htmlStr)
 		} else {
 			pandocTitle := ""

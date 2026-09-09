@@ -186,6 +186,25 @@ func ConvertAndDisassemble(cfg Config, adoc []byte) (*Result, error) {
 	return r, nil
 }
 
+func RemoveHighlightScripts(htmlStr string) string {
+	doc, err := htmlutil.Parse(htmlStr)
+	if err != nil {
+		return htmlStr
+	}
+	htmlutil.RemoveAll(doc, func(node *html.Node) bool {
+		if node.Type != html.ElementNode || node.Data != "script" {
+			return false
+		}
+		src := htmlutil.GetAttr(node, "src")
+		if strings.Contains(src, "highlight.js/") && strings.Contains(src, "highlight.min.js") {
+			return true
+		}
+		text := htmlutil.Text(node)
+		return strings.Contains(text, "hljs.initHighlighting.called") && strings.Contains(text, "hljs.highlightBlock")
+	})
+	return htmlutil.Serialize(doc)
+}
+
 // extractTitle returns text from <title>.
 func extractTitle(doc *html.Node) string {
 	title := htmlutil.FindByTag(doc, "title")
