@@ -130,6 +130,10 @@ func normalizePath(urlPath string) string {
 	return urlPath
 }
 
+func encodeURLPath(urlPath string) string {
+	return (&url.URL{Path: urlPath}).EscapedPath()
+}
+
 func serveRootPrefix(urlPath string) string {
 	dir := path.Dir(urlPath)
 	if dir == "/" || dir == "." {
@@ -254,7 +258,7 @@ func serveMetadata(w http.ResponseWriter, r *http.Request, root, urlPath string)
 		if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			continue
 		}
-		cleanPath := "/" + strings.TrimSuffix(filepath.ToSlash(rel), filepath.Ext(rel))
+		cleanPath := encodeURLPath("/" + strings.TrimSuffix(filepath.ToSlash(rel), filepath.Ext(rel)))
 		keywords := fm.Keywords
 		if keywords == nil {
 			keywords = []string{}
@@ -480,7 +484,7 @@ func (s *Server) Handler() (http.Handler, error) {
 		if ext := filepath.Ext(urlPath); ext == ".md" || ext == ".adoc" {
 			if !r.URL.Query().Has("noredirect") {
 				if _, err := os.Stat(filepath.Join(s.Root, urlPath)); err == nil {
-					target := strings.TrimSuffix(urlPath, ext)
+					target := encodeURLPath(strings.TrimSuffix(urlPath, ext))
 					if target == "" {
 						target = "/"
 					}

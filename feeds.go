@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/tim-janik/iris/htmlutil"
@@ -19,8 +18,8 @@ func newFeedItem(pg *InputPage, siteURL string, siteTitle string, descLen int) t
 	excerpt := truncateExcerpt(stripTags(htmlutil.StripElements(pg.Rendered.Content, "figure")), descLen)
 	return templates.FeedItem{
 		Title:         pg.Front.Title,
-		URL:           siteURL + "/" + strings.TrimPrefix(cleanURL(pg.OutputPath), "/"),
-		LinkHref:      cleanURL(pg.OutputPath),
+		URL:           joinURLPath(siteURL, cleanURL(pg.OutputPath)),
+		LinkHref:      encodeURLPath(cleanURL(pg.OutputPath)),
 		PublishedDate: pg.PubDate,
 		ModifiedDate:  pg.ModDate,
 		Keywords:      pg.Front.Keywords,
@@ -70,11 +69,11 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 	// the conventional feed paths below the site URL.
 	rssURL := site.FeedURL
 	if rssURL == "" {
-		rssURL = site.URL + "/rss2.xml"
+		rssURL = joinURLPath(site.URL, "rss2.xml")
 	}
 	atomURL := site.FeedURL
 	if atomURL == "" {
-		atomURL = site.URL + "/atom.xml"
+		atomURL = joinURLPath(site.URL, "atom.xml")
 	}
 	// addFeedSitemapEntry records a written feed file for the sitemap. With a
 	// custom feed_url both feeds share one URL, which must be listed only once.

@@ -50,7 +50,7 @@ func generateDirIndices(eng *templates.Engine, pages []*InputPage, siteGo templa
 				linkHref = strings.TrimPrefix(linkHref, dir+"/")
 			}
 			fi := newFeedItem(pg, siteGo.URL, siteGo.Title, siteGo.DescLen)
-			fi.LinkHref = linkHref
+			fi.LinkHref = encodeURLPath(linkHref)
 			feedItems = append(feedItems, fi)
 		}
 
@@ -109,7 +109,7 @@ func generateDirIndices(eng *templates.Engine, pages []*InputPage, siteGo templa
 		if dirModDate.IsZero() {
 			dirModDate = now
 		}
-		loc := siteGo.URL + "/" + strings.TrimPrefix(strings.TrimPrefix(cleanURL(indexPath), "/"), "./")
+		loc := joinURLPath(siteGo.URL, strings.TrimPrefix(strings.TrimPrefix(cleanURL(indexPath), "/"), "./"))
 		sitemapEntries = append(sitemapEntries, templates.SitemapEntry{
 			Loc:        loc,
 			Priority:   calcPriorityForPath(loc, depth),
@@ -140,7 +140,7 @@ func generateSitemap(eng *templates.Engine, pages []*InputPage, site SiteConfig,
 		} else {
 			urlPath = cleanURL(pg.OutputPath)
 		}
-		loc := site.URL + "/" + strings.TrimPrefix(urlPath, "/")
+		loc := joinURLPath(site.URL, urlPath)
 		entries = append(entries, templates.SitemapEntry{
 			Loc:        loc,
 			Priority:   calcPriority(pg, loc, now),

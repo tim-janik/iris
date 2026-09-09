@@ -470,7 +470,7 @@ func TestRenderAtom_URLAndAttributeEscaping(t *testing.T) {
 
 	// Entry id and link should be escaped
 	assertContains(t, out, `<id>https://example.com/post?id=1&amp;cat=2</id>`)
-	assertContains(t, out, `href="post?id=1&amp;cat=2"`)
+	assertContains(t, out, `href="https://example.com/post?id=1&amp;cat=2"`)
 }
 
 func TestRenderSitemap_XMLEscaping(t *testing.T) {

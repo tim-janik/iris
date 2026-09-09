@@ -19,9 +19,10 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
-	htmplt "html/template"
 	"html"
+	htmplt "html/template"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -109,6 +110,30 @@ func ResolveStylesheet(stylesheet, root string) string {
 		root = "."
 	}
 	return root + "/" + s
+}
+
+func EncodeURLPath(path string) string {
+	path = filepath.ToSlash(path)
+	if path == "" {
+		return ""
+	}
+	return (&url.URL{Path: path}).EscapedPath()
+}
+
+func JoinURLPath(base, path string) string {
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return strings.TrimRight(base, "/") + "/" + strings.TrimLeft(EncodeURLPath(path), "/")
+	}
+	basePath := strings.TrimRight(parsed.Path, "/")
+	path = strings.TrimLeft(filepath.ToSlash(path), "/")
+	if path == "" {
+		parsed.Path = basePath + "/"
+	} else {
+		parsed.Path = basePath + "/" + path
+	}
+	parsed.RawPath = ""
+	return parsed.String()
 }
 
 // FeedItem represents a single item in a feed or directory listing.
@@ -559,7 +584,7 @@ func BuildFeedItems(
 
 		item := FeedItem{
 			Title:         pg.Title,
-			URL:           site.URL + "/" + strings.TrimPrefix(urlPath, "/"),
+			URL:           JoinURLPath(site.URL, urlPath),
 			PublishedDate: pg.PublishedDate,
 			ModifiedDate:  pg.ModifiedDate,
 			Keywords:      pg.Keywords,
@@ -570,7 +595,7 @@ func BuildFeedItems(
 		}
 
 		// Compute relative link href (mirrors page.link_href(pg))
-		item.LinkHref = computeRelativeHref(baseDir, href)
+		item.LinkHref = EncodeURLPath(computeRelativeHref(baseDir, href))
 
 		items = append(items, item)
 	}

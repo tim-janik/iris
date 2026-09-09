@@ -4,6 +4,8 @@ package main
 import (
 	"path/filepath"
 	"strings"
+
+	"github.com/tim-janik/iris/templates"
 )
 
 func computeDirInfo(dir string) (dirName string, depth int, root string) {
@@ -38,6 +40,7 @@ func computePathInfoForDir(dir string) (dirName string, depth int, root string) 
 // cleanURL strips the .html extension for clean URLs.
 // index.html is converted to trailing slash (e.g. "2005/index.html" → "2005/").
 func cleanURL(path string) string {
+	path = filepath.ToSlash(path)
 	if strings.HasSuffix(path, "/index.html") || path == "index.html" {
 		dir := strings.TrimSuffix(path, "index.html")
 		if dir == "" {
@@ -46,4 +49,12 @@ func cleanURL(path string) string {
 		return dir
 	}
 	return strings.TrimSuffix(path, ".html")
+}
+
+func encodeURLPath(path string) string {
+	return templates.EncodeURLPath(path)
+}
+
+func joinURLPath(base, path string) string {
+	return templates.JoinURLPath(base, path)
 }

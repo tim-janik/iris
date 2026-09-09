@@ -32,7 +32,7 @@
     <title>{{xmlEscape .Title}}</title>
     <updated>{{formatDate .ModifiedDate "iso8601"}}</updated>
     <published>{{formatDate .PublishedDate "iso8601"}}</published>
-    <link rel="alternate" href="{{xmlEscape .LinkHref}}"/>
+    <link rel="alternate" href="{{xmlEscape .URL}}"/>
 {{- range .Keywords}}
     <category term="{{xmlEscape .}}"/>
 {{- end}}

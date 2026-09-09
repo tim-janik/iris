@@ -14,7 +14,7 @@
     <title>Mermaid Diagrams</title>
     <updated>2026-09-08T03:07:06Z</updated>
     <published>2026-06-01T00:00:00Z</published>
-    <link rel="alternate" href="2026/mermaid"/>
+    <link rel="alternate" href="https://golden.example.org/2026/mermaid"/>
     <category term="mermaid"/>
     <category term="test"/>
     <summary>Mermaid Diagrams A flowchart renders client side: flowchart TD src[Input files] --&gt; parse[Parse source] parse --&gt; out[Rendered pages] out --&gt; check[Diff against golden] A Go block gets highlighted: func main() { println(&#34;golden&#34;) }</summary>
@@ -39,7 +39,7 @@
     <title>Second Post</title>
     <updated>2026-09-08T03:07:06Z</updated>
     <published>2026-04-02T00:00:00Z</published>
-    <link rel="alternate" href="2026/second"/>
+    <link rel="alternate" href="https://golden.example.org/2026/second"/>
     <summary>Second Post An older post, so feed and index ordering have something to sort.</summary>
     <content type="html" xml:base="https://golden.example.org/2026/second">&lt;header id=&#34;title-block-header&#34;&gt;
 
