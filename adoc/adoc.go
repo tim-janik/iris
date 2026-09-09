@@ -186,6 +186,7 @@ func ConvertAndDisassemble(cfg Config, adoc []byte) (*Result, error) {
 	return r, nil
 }
 
+// RemoveHighlightScripts strips highlight.js scripts before serve embeds a page.
 func RemoveHighlightScripts(htmlStr string) string {
 	doc, err := htmlutil.Parse(htmlStr)
 	if err != nil {
