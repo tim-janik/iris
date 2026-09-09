@@ -303,6 +303,16 @@ func TestFilterExcludeOverridesInclude(t *testing.T) {
 	}
 }
 
+func TestFilterShouldTraverseNilMatchesHiddenPolicy(t *testing.T) {
+	var filter *Filter
+	if filter.ShouldTraverse(".hidden") {
+		t.Error("nil filter should not traverse hidden directories")
+	}
+	if !filter.ShouldTraverse("visible") {
+		t.Error("nil filter should traverse visible directories")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Performance: compiled vs uncompiled
 // ---------------------------------------------------------------------------
