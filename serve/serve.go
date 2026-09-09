@@ -26,6 +26,7 @@ import (
 	"github.com/tim-janik/iris/frontmatter"
 	"github.com/tim-janik/iris/mimetype"
 	"github.com/tim-janik/iris/pandoc"
+	"github.com/tim-janik/iris/sourcepath"
 	"github.com/tim-janik/iris/templates"
 )
 
@@ -454,6 +455,10 @@ func (s *Server) Handler() (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init templates: %w", err)
 	}
+	resolver, err := sourcepath.New(s.Root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve serve root: %w", err)
+	}
 
 	cfg := s.PandocConfig
 
@@ -488,7 +493,7 @@ func (s *Server) Handler() (http.Handler, error) {
 		// unless ?noredirect is set to request the raw source.
 		if ext := filepath.Ext(urlPath); ext == ".md" || ext == ".adoc" {
 			if !r.URL.Query().Has("noredirect") {
-				if _, err := os.Stat(filepath.Join(s.Root, urlPath)); err == nil {
+				if _, _, err := resolver.Resolve(urlPath, []string{""}); err == nil {
 					target := templates.EncodeURLPath(strings.TrimSuffix(urlPath, ext))
 					if target == "" {
 						target = "/"
@@ -503,22 +508,9 @@ func (s *Server) Handler() (http.Handler, error) {
 		// Try the path as-is first, then append .md, then .adoc.
 		// convertToHTML is true only when we found the file by appending an extension
 		// (i.e. the user requested /foo/bar and we resolved it to /foo/bar.md).
-		var absPath string
-		var found, convertToHTML bool
-		if info, err := os.Stat(filepath.Join(s.Root, urlPath)); err == nil && !info.IsDir() {
-			absPath = filepath.Join(s.Root, urlPath)
-			found = true
-		} else {
-			for _, ext := range []string{".md", ".adoc"} {
-				candidate := urlPath + ext
-				if _, err := os.Stat(filepath.Join(s.Root, candidate)); err == nil {
-					absPath = filepath.Join(s.Root, candidate)
-					found = true
-					convertToHTML = true
-					break
-				}
-			}
-		}
+		absPath, extension, err := resolver.Resolve(urlPath, []string{"", ".md", ".adoc"})
+		found := err == nil
+		convertToHTML := found && extension != ""
 
 		if !found {
 			log.Printf("[404] %s (not found)", urlPath)

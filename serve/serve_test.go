@@ -475,3 +475,31 @@ func TestServePreservesExplicitAsciiDocTitle(t *testing.T) {
 		t.Fatalf("converted heading missing: %s", rec.Body)
 	}
 }
+
+func TestHandlerRejectsOutsideSymlinksAndEncodedTraversal(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "root")
+	if err := os.Mkdir(root, 0755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(base, "outside.txt")
+	if err := os.WriteFile(outside, []byte("outside"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "link.txt")); err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{Root: root}
+	handler, err := server.Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"/link.txt", "/%2e%2e/outside.txt"} {
+		req := httptest.NewRequest(http.MethodGet, "http://example.com"+target, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s status = %d, body = %s", target, rec.Code, rec.Body)
+		}
+	}
+}

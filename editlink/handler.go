@@ -5,27 +5,24 @@ import (
 	"crypto/hmac"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/tim-janik/iris/sourcepath"
 )
 
 // resolveSourcePath resolves the absolute path to the source file for a given
 // URL path and source root directory.
 func resolveSourcePath(urlPath, srcRoot string) string {
-	if !strings.HasPrefix(urlPath, "/") {
-		urlPath = "/" + urlPath
+	resolver, err := sourcepath.New(srcRoot)
+	if err != nil {
+		return ""
 	}
-
-	for _, ext := range []string{"", ".md", ".adoc"} {
-		candidate := filepath.Join(srcRoot, urlPath+ext)
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate
-		}
+	path, _, err := resolver.Resolve(urlPath, []string{"", ".md", ".adoc"})
+	if err != nil {
+		return ""
 	}
-
-	return ""
+	return path
 }
 
 // handleEditQuery checks if the request has an "edl" query parameter.
