@@ -2,6 +2,7 @@
 package main
 
 import (
+	"fmt"
 	"html/template"
 	"log"
 	"os"
@@ -32,7 +33,7 @@ func newFeedItem(pg *InputPage, siteURL string, siteTitle string, descLen int) t
 
 // generateFeeds creates RSS 2.0 and Atom feeds for all posts.
 // Returns sitemap entries for the feed files created.
-func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, siteGo templates.SiteConfig, outputDir string, now time.Time) []templates.SitemapEntry {
+func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, siteGo templates.SiteConfig, outputDir string, now time.Time) ([]templates.SitemapEntry, error) {
 	var sitemapEntries []templates.SitemapEntry
 	// Collect all posts sorted by published date (newest first)
 	var feedItems []templates.FeedItem
@@ -103,10 +104,10 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 	}
 	rssXML, err := eng.RenderRSS(rssData)
 	if err != nil {
-		log.Printf("render rss2: %v", err)
+		return nil, fmt.Errorf("render rss2: %w", err)
 	} else {
 		if err := os.WriteFile(filepath.Join(outputDir, "rss2.xml"), rssXML, 0644); err != nil {
-			log.Printf("write rss2.xml: %v", err)
+			return nil, fmt.Errorf("write rss2.xml: %w", err)
 		} else {
 			log.Printf("  rss2 -> rss2.xml")
 			addFeedSitemapEntry(rssURL)
@@ -126,14 +127,14 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 	}
 	atomXML, err := eng.RenderAtom(atomData)
 	if err != nil {
-		log.Printf("render atom: %v", err)
+		return nil, fmt.Errorf("render atom: %w", err)
 	} else {
 		if err := os.WriteFile(filepath.Join(outputDir, "atom.xml"), atomXML, 0644); err != nil {
-			log.Printf("write atom.xml: %v", err)
+			return nil, fmt.Errorf("write atom.xml: %w", err)
 		} else {
 			log.Printf("  atom -> atom.xml")
 			addFeedSitemapEntry(atomURL)
 		}
 	}
-	return sitemapEntries
+	return sitemapEntries, nil
 }
