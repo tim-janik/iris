@@ -10,7 +10,9 @@ func TestConvertAndDisassembleKeepsFootnotes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result.Content, `id="footnotes"`) || !strings.Contains(result.Content, "details") {
-		t.Fatalf("content omitted footnote definitions: %s", result.Content)
+	for _, want := range []string{`id="footnotes"`, "details", `href="#_footnoteref_1"`, `id="_footnotedef_1"`} {
+		if !strings.Contains(result.Content, want) {
+			t.Fatalf("content omitted footnote definitions: %s", result.Content)
+		}
 	}
 }
