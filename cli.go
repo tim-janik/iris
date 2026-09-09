@@ -378,6 +378,9 @@ func ssgMain() {
 
 	// Sort so classification order is stable regardless of FS walk order
 	sort.Strings(allFiles)
+	if err := validateOutputCollisions(allFiles); err != nil {
+		log.Fatalf("output collision: %v", err)
+	}
 
 	// Unified parallel queue: process all files (convert+render for .md/.adoc,
 	// copy for static files, git dates for pageclass.PageCopy)
