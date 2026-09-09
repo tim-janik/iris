@@ -500,7 +500,7 @@ func loadCommentsForPages(cfg MailboxConfig, pages []*InputPage) {
 }
 
 // renderAllPages renders each input page and writes the HTML output.
-func renderAllPages(eng *templates.Engine, pages []*InputPage, siteGo templates.SiteConfig, outputDir string) {
+func renderAllPages(eng *templates.Engine, pages []*InputPage, siteGo templates.SiteConfig, outputDir string) error {
 	for _, pg := range pages {
 		// Skip static files (pageclass.PageCopy, pageclass.PageAsset) — they are already copied
 		if !pg.Type.NeedsRender() {
@@ -508,20 +508,18 @@ func renderAllPages(eng *templates.Engine, pages []*InputPage, siteGo templates.
 		}
 		outPath := filepath.Join(outputDir, pg.OutputPath)
 		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-			log.Printf("  mkdir %s: %v", filepath.Dir(outPath), err)
-			continue
+			return fmt.Errorf("mkdir %s: %w", filepath.Dir(outPath), err)
 		}
 
 		html, err := renderPage(eng, pg, siteGo)
 		if err != nil {
-			log.Printf("  render %s: %v", pg.RelPath, err)
-			continue
+			return fmt.Errorf("render %s: %w", pg.RelPath, err)
 		}
 
 		if err := os.WriteFile(outPath, html, 0644); err != nil {
-			log.Printf("  write %s: %v", outPath, err)
-			continue
+			return fmt.Errorf("write %s: %w", outPath, err)
 		}
 		log.Printf("  %s -> %s", pg.RelPath, pg.OutputPath)
 	}
+	return nil
 }

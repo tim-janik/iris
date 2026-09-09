@@ -285,6 +285,9 @@ func recordServe(handler http.Handler, root, outDir string) error {
 		req := httptest.NewRequest(http.MethodGet, (&url.URL{Path: urlPath}).String(), nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
+		if rec.Code >= http.StatusInternalServerError {
+			return fmt.Errorf("record %s: server returned %d", urlPath, rec.Code)
+		}
 		if rec.Code != http.StatusOK {
 			log.Printf("[%d] %s (not recorded)", rec.Code, urlPath)
 			return nil
@@ -397,17 +400,27 @@ func ssgMain() {
 	}, pages)
 
 	// Render pages (only types that need template rendering)
-	renderAllPages(eng, pages, siteGo, args.outputDir)
+	if err := renderAllPages(eng, pages, siteGo, args.outputDir); err != nil {
+		log.Fatalf("render pages: %v", err)
+	}
 
 	// Generate directory indices (returns sitemap entries for each dirindex)
-	dirIndexEntries := generateDirIndices(eng, pages, siteGo, args.outputDir, args.now)
+	dirIndexEntries, err := generateDirIndices(eng, pages, siteGo, args.outputDir, args.now)
+	if err != nil {
+		log.Fatalf("generate directory indices: %v", err)
+	}
 
 	// Generate RSS and Atom feeds (returns sitemap entries for feed files)
-	feedEntries := generateFeeds(eng, pages, site, siteGo, args.outputDir, args.now)
+	feedEntries, err := generateFeeds(eng, pages, site, siteGo, args.outputDir, args.now)
+	if err != nil {
+		log.Fatalf("generate feeds: %v", err)
+	}
 
 	// Generate sitemap (after dirindices and feeds so all entries are known)
 	allExtra := append(dirIndexEntries, feedEntries...)
-	generateSitemap(eng, pages, site, args.outputDir, allExtra, args.now)
+	if err := generateSitemap(eng, pages, site, args.outputDir, allExtra, args.now); err != nil {
+		log.Fatalf("generate sitemap: %v", err)
+	}
 
 	log.Printf("Done. Output in %s", args.outputDir)
 }
