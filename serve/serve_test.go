@@ -92,6 +92,59 @@ func TestMetadataRouteEmptyAndTraversal(t *testing.T) {
 	}
 }
 
+func TestMetadataRouteUsesPublicPathForSymlinkedRoot(t *testing.T) {
+	realRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(realRoot, "page.md"), []byte("---\ntitle: page\n---\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	linkParent := t.TempDir()
+	rootLink := filepath.Join(linkParent, "root")
+	if err := os.Symlink(realRoot, rootLink); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/..~meta~?cmd=get-frontmatter-array", nil)
+	rec := httptest.NewRecorder()
+	(&Server{Root: rootLink}).handleMetadataRoute(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"url":"/page"`) {
+		t.Fatalf("symlinked root metadata = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestMetadataRoutePreservesInternalDirectoryAlias(t *testing.T) {
+	root := t.TempDir()
+	realDir := filepath.Join(root, "posts")
+	if err := os.Mkdir(realDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(realDir, "page.md"), []byte("---\ntitle: page\n---\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realDir, filepath.Join(root, "alias")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	metadata := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/alias/..~meta~?cmd=get-frontmatter-array", nil)
+		rec := httptest.NewRecorder()
+		(&Server{Root: root}).handleMetadataRoute(rec, req)
+		return rec
+	}
+	if rec := metadata(); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"url":"/alias/page"`) {
+		t.Fatalf("aliased metadata = %d %s", rec.Code, rec.Body)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/alias/..~meta~?cmd=create-file&name=created.md", strings.NewReader("---\ntitle: created\n---\n"))
+	rec := httptest.NewRecorder()
+	(&Server{Root: root}).handleMetadataRoute(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("aliased create = %d %s", rec.Code, rec.Body)
+	}
+	if rec := metadata(); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"url":"/alias/created"`) {
+		t.Fatalf("aliased metadata after create = %d %s", rec.Code, rec.Body)
+	}
+}
+
 func TestCreateFileSuccess(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "tasks"), 0755); err != nil {

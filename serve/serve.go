@@ -233,7 +233,14 @@ func serveMetadata(w http.ResponseWriter, r *http.Request, root, urlPath string)
 		return
 	}
 
-	rootAbs, _ := filepath.Abs(root)
+	dirURL := strings.TrimSuffix(urlPath, "/..~meta~")
+	if dirURL == "" {
+		dirURL = "/"
+	}
+	dirURL = strings.TrimRight(dirURL, "/")
+	if dirURL == "" {
+		dirURL = "/"
+	}
 	objects := make([]map[string]any, 0)
 	for _, entry := range entries {
 		name := entry.Name()
@@ -250,11 +257,12 @@ func serveMetadata(w http.ResponseWriter, r *http.Request, root, urlPath string)
 			continue
 		}
 		fm, _ := frontmatter.Parse(data, name)
-		rel, relErr := filepath.Rel(rootAbs, filepath.Join(dir, name))
-		if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
+		cleanPath := strings.TrimSuffix(name, filepath.Ext(name))
+		if dirURL == "/" {
+			cleanPath = "/" + cleanPath
+		} else {
+			cleanPath = dirURL + "/" + cleanPath
 		}
-		cleanPath := "/" + strings.TrimSuffix(filepath.ToSlash(rel), filepath.Ext(rel))
 		keywords := fm.Keywords
 		if keywords == nil {
 			keywords = []string{}
