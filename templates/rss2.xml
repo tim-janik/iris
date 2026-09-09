@@ -42,10 +42,10 @@
 {{- range .Keywords}}
       <category>{{xmlEscape .}}</category>
 {{- end}}
-{{- if or .Options.WithDescription (not .Options.WithContent)}}
+{{- if or $.Options.WithDescription .Options.WithDescription (not (or $.Options.WithContent .Options.WithContent))}}
       <description>{{xmlEscape .Excerpt}}</description>
 {{- end}}
-{{- if .Options.WithContent}}
+{{- if or $.Options.WithContent .Options.WithContent}}
       <content:encoded>{{xmlEscape .FullContent}}</content:encoded>
 {{- end}}
     </item>
