@@ -217,7 +217,11 @@ func extractContent(doc *html.Node) string {
 	if h1 := htmlutil.FindByTag(content, "h1"); h1 != nil {
 		htmlutil.Remove(h1)
 	}
-	return strings.TrimSpace(htmlutil.InnerHTML(content))
+	result := strings.TrimSpace(htmlutil.InnerHTML(content))
+	if footnotes := htmlutil.FindByID(doc, "footnotes"); footnotes != nil {
+		result += "\n" + htmlutil.Serialize(footnotes)
+	}
+	return strings.TrimSpace(result)
 }
 
 // extractFooter returns text from <div id="footer-text">.
