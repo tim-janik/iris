@@ -20,7 +20,9 @@ func TestGenerateFeedsAppliesOptionsToItems(t *testing.T) {
 	site := SiteConfig{URL: "https://example.com", Title: "Site", TeaserLen: 300, FeedAge: -1}
 	siteGo := templates.SiteConfig{URL: site.URL, Title: site.Title, FeedAge: -1, TeaserLen: site.TeaserLen}
 
-	generateFeeds(eng, []*InputPage{page}, site, siteGo, outDir, now)
+	if _, err := generateFeeds(eng, []*InputPage{page}, site, siteGo, outDir, now); err != nil {
+		t.Fatal(err)
+	}
 
 	atom := readTestFile(t, filepath.Join(outDir, "atom.xml"))
 	if !strings.Contains(atom, `<content type="html"`) || !strings.Contains(atom, `full feed body`) {

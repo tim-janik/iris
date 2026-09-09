@@ -27,6 +27,7 @@
 {{- end}}
   <generator uri="https://github.com/tim-janik/iris/">Iris</generator>
 {{- range .Items}}
+{{- $wc := or $.Options.WithContent .Options.WithContent}}
   <entry>
     <id>{{xmlEscape .URL}}</id>
     <title>{{xmlEscape .Title}}</title>
@@ -36,10 +37,10 @@
 {{- range .Keywords}}
     <category term="{{xmlEscape .}}"/>
 {{- end}}
-{{- if or $.Options.WithDescription .Options.WithDescription (not (or $.Options.WithContent .Options.WithContent))}}
+{{- if or $.Options.WithDescription .Options.WithDescription (not $wc)}}
     <summary>{{xmlEscape .Excerpt}}</summary>
 {{- end}}
-{{- if or $.Options.WithContent .Options.WithContent}}
+{{- if $wc}}
     <content type="html" xml:base="{{xmlEscape .URL}}">{{xmlEscape .FullContent}}</content>
 {{- end}}
   </entry>
