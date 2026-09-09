@@ -54,12 +54,20 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 		return feedItems[i].PublishedDate.After(feedItems[j].PublishedDate)
 	})
 
-	// Use newest page's published date for reproducible builds. Empty feeds
-	// fall back to the build time, so lastBuildDate/atom <updated>/sitemap
-	// lastmod never emit the zero time (year 0001).
-	lastBuild := now
-	if len(feedItems) > 0 {
-		lastBuild = feedItems[0].PublishedDate
+	// Use the newest entry change time for feed metadata. Empty feeds fall
+	// back to the build time, so generated dates never use the zero time.
+	var lastBuild time.Time
+	for _, item := range feedItems {
+		entryTime := item.ModifiedDate
+		if entryTime.IsZero() {
+			entryTime = item.PublishedDate
+		}
+		if entryTime.After(lastBuild) {
+			lastBuild = entryTime
+		}
+	}
+	if lastBuild.IsZero() {
+		lastBuild = now
 	}
 
 	// Helper to track successfully written feed files for sitemap
