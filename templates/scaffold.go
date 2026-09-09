@@ -49,6 +49,7 @@ type SiteConfig struct {
 	LogoHref    string   // site.logo_href (optional)
 	IconHref    string   // site.icon_href (optional)
 	FeedURL     string   // site.feed_url (optional)
+	CommentsEmail string   // site.comments_email (optional)
 	FeedAge     int      // site.feed_age (max age in days for RSS/Atom, -1 = unlimited)
 	TeaserLen   int      // site.teaser_len (excerpt length for feeds)
 	DescLen     int      // site.desc_len (excerpt length for directory listings)
@@ -80,7 +81,7 @@ type PageData struct {
 	// Computed fields (replacing Jinja2 method calls):
 	LUID        string // page.get_luid()
 	EmailPath   string // precomputed path for mailto comment URL (e.g., "/2005/stem")
-	CommentLink htmplt.HTML // precomputed <a> tag for comment link (bypasses URL escaping)
+	CommentHref string // precomputed mailto URL for the comment link
 	// StylesheetHref is the stylesheet link href resolved against the page
 	// root (see ResolveStylesheet); empty when no stylesheet is configured.
 	StylesheetHref string

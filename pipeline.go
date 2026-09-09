@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"io/fs"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -428,6 +429,16 @@ func renderPage(eng *templates.Engine, pg *InputPage, site templates.SiteConfig)
 	if len(authors) == 0 {
 		authors = site.Authors
 	}
+	commentHref := ""
+	if pg.Type.IsPost() && site.CommentsEmail != "" {
+		emailPath := strings.TrimSuffix(pg.DirName, "/") + "/" + pg.Stem
+		commentText := "Add comment to " + emailPath
+		query := url.Values{}
+		query.Set("subject", commentText)
+		query.Set("body", commentText+":\n\n")
+		commentHref = "mailto:" + fmt.Sprintf(site.CommentsEmail, computeLUID(pg.DirName+pg.Stem)) + "?" +
+			strings.ReplaceAll(query.Encode(), "+", "%20")
+	}
 
 	pageData := templates.TemplateData{
 		Site:           site,
@@ -449,14 +460,7 @@ func renderPage(eng *templates.Engine, pg *InputPage, site templates.SiteConfig)
 			LUID:           computeLUID(pg.DirName + pg.Stem),
 			EmailPath:      strings.TrimSuffix(pg.DirName, "/") + "/" + pg.Stem,
 			StylesheetHref: templates.ResolveStylesheet(site.Stylesheet, pg.Root),
-			CommentLink: template.HTML(fmt.Sprintf(
-				`<a href="mailto:newcomment+%s@testbit.eu?subject=Add%%20comment%%20to%%20%s&body=Add%%20comment%%20to%%20%s:%%0a%%0a"
-				   title="Send comment to publish via email, the email address itself is not published"
-				   >Post comment via email</a>`,
-				computeLUID(pg.DirName+pg.Stem),
-				strings.TrimSuffix(pg.DirName, "/")+"/"+pg.Stem,
-				strings.TrimSuffix(pg.DirName, "/")+"/"+pg.Stem,
-			)),
+			CommentHref:    commentHref,
 		},
 		Root:      pg.Root,
 		BodyClass: bodyClass,
