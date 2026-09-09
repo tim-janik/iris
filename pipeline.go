@@ -93,14 +93,13 @@ func walkFiles(inputDir, outputDir string, filter *globstar.Filter) ([]string, e
 		if rel == "." {
 			return nil
 		}
-		// Apply filter
-		if !filter.ShouldInclude(rel) {
-			if d.IsDir() {
+		if d.IsDir() {
+			if !filter.ShouldTraverse(rel) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if d.IsDir() {
+		if !filter.ShouldInclude(rel) {
 			return nil
 		}
 		files = append(files, rel)

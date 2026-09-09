@@ -179,3 +179,13 @@ func (f *Filter) ShouldInclude(path string) bool {
 
 	return true
 }
+
+func (f *Filter) ShouldTraverse(path string) bool {
+	if f == nil {
+		return true
+	}
+	if IsHidden(path) && (f.Include == nil || !f.Include.Match(path)) {
+		return false
+	}
+	return f.Exclude == nil || !f.Exclude.Match(path)
+}
