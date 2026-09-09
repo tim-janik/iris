@@ -235,17 +235,11 @@ func serveMain() {
 // 2005/hello. Directories and non-passthrough files yield 404 in serve
 // mode and are not recorded. The outDir itself is excluded from the walk.
 func recordServe(handler http.Handler, root, outDir string) error {
-	rootAbs, err := filepath.Abs(root)
+	rootAbs, outAbs, err := validate_output_paths(root, outDir)
 	if err != nil {
 		return err
 	}
-	outAbs, err := filepath.Abs(outDir)
-	if err != nil {
-		return err
-	}
-	if outAbs == rootAbs || strings.HasPrefix(rootAbs, outAbs+string(os.PathSeparator)) {
-		return fmt.Errorf("record dir %s contains the input root %s", outDir, root)
-	}
+	root, outDir = rootAbs, outAbs
 	if err := os.RemoveAll(outAbs); err != nil {
 		return fmt.Errorf("clear record dir: %w", err)
 	}
@@ -342,6 +336,11 @@ func ssgMain() {
 	log.Printf("Input:  %s", args.inputDir)
 	log.Printf("Output: %s", args.outputDir)
 
+	input_dir, output_dir, err := validate_output_paths(args.inputDir, args.outputDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+	args.inputDir, args.outputDir = input_dir, output_dir
 	prepareOutputDir(args.outputDir, args.clearOutput)
 	if err := templates.WriteAssets(args.outputDir, highlightScriptAsset, highlightStyleAsset, mermaidScriptAsset); err != nil {
 		log.Fatalf("write template assets: %v", err)
