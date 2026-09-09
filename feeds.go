@@ -77,11 +77,11 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 	// the conventional feed paths below the site URL.
 	rssURL := site.FeedURL
 	if rssURL == "" {
-		rssURL = templates.JoinURLPath(site.URL, "rss2.xml")
+		rssURL = templates.JoinURLPath(site.URL, templates.RSSFeedPath)
 	}
 	atomURL := site.FeedURL
 	if atomURL == "" {
-		atomURL = templates.JoinURLPath(site.URL, "atom.xml")
+		atomURL = templates.JoinURLPath(site.URL, templates.AtomFeedPath)
 	}
 	// addFeedSitemapEntry records a written feed file for the sitemap. With a
 	// custom feed_url both feeds share one URL, which must be listed only once.
@@ -113,10 +113,10 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 	if err != nil {
 		return nil, fmt.Errorf("render rss2: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(outputDir, "rss2.xml"), rssXML, 0644); err != nil {
-		return nil, fmt.Errorf("write rss2.xml: %w", err)
+	if err := os.WriteFile(filepath.Join(outputDir, templates.RSSFeedPath), rssXML, 0644); err != nil {
+		return nil, fmt.Errorf("write %s: %w", templates.RSSFeedPath, err)
 	}
-	log.Printf("  rss2 -> rss2.xml")
+	log.Printf("  rss2 -> %s", templates.RSSFeedPath)
 	addFeedSitemapEntry(rssURL)
 
 	// Atom
@@ -134,10 +134,10 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 	if err != nil {
 		return nil, fmt.Errorf("render atom: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(outputDir, "atom.xml"), atomXML, 0644); err != nil {
-		return nil, fmt.Errorf("write atom.xml: %w", err)
+	if err := os.WriteFile(filepath.Join(outputDir, templates.AtomFeedPath), atomXML, 0644); err != nil {
+		return nil, fmt.Errorf("write %s: %w", templates.AtomFeedPath, err)
 	}
-	log.Printf("  atom -> atom.xml")
+	log.Printf("  atom -> %s", templates.AtomFeedPath)
 	addFeedSitemapEntry(atomURL)
 	return sitemapEntries, nil
 }
