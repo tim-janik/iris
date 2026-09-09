@@ -180,12 +180,13 @@ func (f *Filter) ShouldInclude(path string) bool {
 	return true
 }
 
+// ShouldTraverse reports whether a directory should be walked into.
 func (f *Filter) ShouldTraverse(path string) bool {
+	if IsHidden(path) && (f == nil || f.Include == nil || !f.Include.Match(path)) {
+		return false
+	}
 	if f == nil {
 		return true
-	}
-	if IsHidden(path) && (f.Include == nil || !f.Include.Match(path)) {
-		return false
 	}
 	return f.Exclude == nil || !f.Exclude.Match(path)
 }
