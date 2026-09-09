@@ -160,6 +160,7 @@ func toTemplateSite(site SiteConfig) templates.SiteConfig {
 		Authors:     site.Authors,
 		Copyright:   site.Copyright,
 		FeedURL:     site.FeedURL,
+		CommentsEmail: site.CommentsEmail,
 		FeedAge:     site.FeedAge,
 		TeaserLen:   site.TeaserLen,
 		DescLen:     site.DescLen,

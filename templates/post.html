@@ -2,7 +2,9 @@
 
 <div class="commentsect">
 <div style="text-align:right; font-family: sans">
-{{.Page.CommentLink}}</div>
+{{- if .Page.CommentHref}}<a href="{{.Page.CommentHref}}"
+   title="Send comment to publish via email, the email address itself is not published"
+   >Post comment via email</a>{{- end}}</div>
 {{- if .Comments}}
 <div class="title"><br /><big><b>Comments:</b></big></div>
 <div class="commentlist">
