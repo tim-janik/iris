@@ -342,3 +342,42 @@ func TestActionCookieAndListenAddress(t *testing.T) {
 		t.Fatalf("explicit listen address = %q", got)
 	}
 }
+
+func TestServeUsesConvertedAsciiDocTitle(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "about.adoc"), []byte("= About Converted\n\nPage body.\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{Root: root}
+	handler, err := server.Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/about", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), "<title>About Converted</title>") {
+		t.Fatalf("converted title missing: %s", rec.Body)
+	}
+}
+
+func TestServePreservesExplicitAsciiDocTitle(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "about.adoc"), []byte("---\ntitle: Explicit Title\n---\n= Converted Heading\n\nPage body.\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{Root: root}
+	handler, err := server.Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/about", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "<title>Explicit Title</title>") {
+		t.Fatalf("explicit title response = %d %s", rec.Code, rec.Body)
+	}
+}

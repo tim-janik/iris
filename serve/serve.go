@@ -592,9 +592,9 @@ func (s *Server) Handler() (http.Handler, error) {
 			bodyContent, convertedTitle, pageMermaid = pandoc.ExtractBodyAndTitle(htmlStr)
 		}
 
-		// Resolve title: frontmatter > h1 from converter > filename (with extension)
+		// Resolve title: explicit frontmatter > converted title > filename.
 		title := fm.Title
-		if title == "" {
+		if title == "" || fm.TitleSynthesized {
 			title = convertedTitle
 		}
 		if title == "" {
