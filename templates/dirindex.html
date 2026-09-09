@@ -14,6 +14,10 @@
 
 {{template "index_title" .}}
 
+{{- if .Page.Content}}
+<div class="authored-index">{{.Page.Content}}</div>
+{{- end}}
+
 <ul>
 {{- range .FeedItems}}
   <li class="postlist">
