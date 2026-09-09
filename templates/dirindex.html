@@ -10,25 +10,13 @@
     {{.Site.Description}}
   </div>
 
-  <div style="display: flex; justify-content: space-evenly; color: #888; display: none">
-    <span><a href="{{.Root}}/projects">Projects</a></span>
-    &nbsp;
-    <span><a href="{{.Root}}/timj" title="Contact">TimJ</a></span>
-    &nbsp;
-    <span><a href="https://github.com/tim-janik/">Github</a></span>
-  </div>
-
-  <!-- <div style="max-width:35em; margin: 1em auto">
-    <a href="tops" style="font-weight: bold; color: #114488">TOPs - Ticker of Opinionated Pieces</a>
-  </div> -->
-
 </div>
 
 {{template "index_title" .}}
 
 <ul>
 {{- range .FeedItems}}
-  <div class="postlist">
+  <li class="postlist">
     <div class="linktitle"><a href="{{.LinkHref}}">{{.Title}}</a></div>
     <div class="linksubtitle">
       <a class="linkdate" href="{{.LinkHref}}">{{formatDate .PublishedDate "day"}}</a>
@@ -40,23 +28,20 @@
     </div>
     <div class="linkdesc">{{.Excerpt}}</div>
     <div class="linkmore"><a href="{{.LinkHref}}">Continue reading</a></div>
-  </div>
+  </li>
 {{- end}}
+</ul>
   <style>
-    #content .postlist			{ margin: 2em 0; }
+    #content .postlist			{ list-style: none; margin: 2em 0; }
     #content .postlist:first-of-type	{ margin-top: 3em; }
-    #content .postlist .linktitle	{ font-size: 125%; font-weight: bold; -x-color: inherit;
-      					  line-height: 1.3; display: inline-block; -x-margin-bottom: .3rem; }
+    #content .postlist .linktitle	{ font-size: 125%; font-weight: bold;
+      line-height: 1.3; display: inline-block; }
     #content .postlist .linksubtitle	{ margin-bottom: 0.5em; color: #888; }
     #content .postlist .linkdate   	{ color: #888; }
-    #content .postlist .linksep   	{ }
-    #content .postlist .linkkeywords  	{ }
 
-    #content .postlist .linkmore	{ color: inherit; }
     #content .postlist .linkmore	{ text-align: center; color: #444; letter-spacing: 0.1rem;
       					  font-variant: small-caps; font-variant-caps: all-small-caps; }
   </style>
-</ul>
 {{- end}}
 
 {{- define "index_title"}}

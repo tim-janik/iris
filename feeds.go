@@ -137,10 +137,3 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 	}
 	return sitemapEntries
 }
-
-// computePathInfo computes dirName, depth, and root for a relative file path.
-// Used for rendered pages (.md/.adoc) and static copies.
-// computeDirInfo returns metadata for a directory path (e.g. "2007" or "."):
-// dirName ("/2007/"), depth (path segments below the root) and root (the
-// relative path back to the site root). Shared by computePathInfo (files) and
-// computePathInfoForDir (auto-generated dirindex pages).

@@ -330,8 +330,6 @@ func initEngine(templateDir string) *templates.Engine {
 	return eng
 }
 
-// toTemplateSite converts a SiteConfig to templates.SiteConfig.
-
 func ssgMain() {
 	args := parseSSGArgs()
 	log.Printf("Input:  %s", args.inputDir)
@@ -407,6 +405,3 @@ func ssgMain() {
 
 	log.Printf("Done. Output in %s", args.outputDir)
 }
-
-// loadCommentsForPages loads comments from .eml files and attaches them
-// to the corresponding InputPage structs.

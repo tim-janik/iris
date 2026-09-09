@@ -109,16 +109,12 @@ func walkFiles(inputDir, outputDir string, filter *globstar.Filter) ([]string, e
 	return files, err
 }
 
-// processAllFiles is the unified parallel queue that handles all file types.
-// .md/.adoc files are converted via pandoc/asciidoctor, rendered, and written.
-// Static files are copied verbatim (with git dates for pageclass.PageCopy, without for pageclass.PageAsset).
-// Returns all InputPage entries (both rendered and copy types) for downstream use.
+// processAllFiles converts source files, copies static files, and returns pages in input order.
 func processAllFiles(paths []string, inputDir, outputDir string, workers int, assetMatcher *globstar.Matcher, eng *templates.Engine, siteGo templates.SiteConfig) ([]*InputPage, error) {
 	// Pre-allocate output slice to preserve order
 	pages := make([]*InputPage, len(paths))
 
-	// Process files concurrently, bounded by the worker count. The first
-	// error aborts the run; Wait returns it after all workers finish.
+	// All jobs run; Wait returns the first error after every worker finishes.
 	var g errgroup.Group
 	g.SetLimit(workers)
 	for idx, rel := range paths {
@@ -530,6 +526,3 @@ func renderAllPages(eng *templates.Engine, pages []*InputPage, siteGo templates.
 		log.Printf("  %s -> %s", pg.RelPath, pg.OutputPath)
 	}
 }
-
-// generateDirIndices creates index.html files for each directory containing posts.
-// Returns sitemap entries for each dirindex page created.
