@@ -18,6 +18,21 @@
     <category term="mermaid"/>
     <category term="test"/>
     <summary>Mermaid Diagrams A flowchart renders client side: flowchart TD src[Input files] --&gt; parse[Parse source] parse --&gt; out[Rendered pages] out --&gt; check[Diff against golden] A Go block gets highlighted: func main() { println(&#34;golden&#34;) }</summary>
+    <content type="html" xml:base="https://golden.example.org/2026/mermaid">&lt;header id=&#34;title-block-header&#34;&gt;
+
+&lt;/header&gt;
+&lt;section id=&#34;mermaid-diagrams&#34; class=&#34;level1&#34;&gt;
+&lt;h1&gt;Mermaid Diagrams&lt;/h1&gt;
+&lt;p&gt;A flowchart renders client side:&lt;/p&gt;
+&lt;pre class=&#34;mermaid&#34;&gt;flowchart TD
+  src[Input files] --&amp;gt; parse[Parse source]
+  parse --&amp;gt; out[Rendered pages]
+  out --&amp;gt; check[Diff against golden]&lt;/pre&gt;
+&lt;p&gt;A Go block gets highlighted:&lt;/p&gt;
+&lt;div class=&#34;sourceCode&#34; id=&#34;cb2&#34;&gt;&lt;pre class=&#34;sourceCode go&#34;&gt;&lt;code class=&#34;sourceCode go&#34;&gt;&lt;span id=&#34;cb2-1&#34;&gt;&lt;a href=&#34;#cb2-1&#34; aria-hidden=&#34;true&#34; tabindex=&#34;-1&#34;&gt;&lt;/a&gt;&lt;span class=&#34;kw&#34;&gt;func&lt;/span&gt; main&lt;span class=&#34;op&#34;&gt;()&lt;/span&gt; &lt;span class=&#34;op&#34;&gt;{&lt;/span&gt;&lt;/span&gt;
+&lt;span id=&#34;cb2-2&#34;&gt;&lt;a href=&#34;#cb2-2&#34; aria-hidden=&#34;true&#34; tabindex=&#34;-1&#34;&gt;&lt;/a&gt;    &lt;span class=&#34;bu&#34;&gt;println&lt;/span&gt;&lt;span class=&#34;op&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;st&#34;&gt;&amp;#34;golden&amp;#34;&lt;/span&gt;&lt;span class=&#34;op&#34;&gt;)&lt;/span&gt;&lt;/span&gt;
+&lt;span id=&#34;cb2-3&#34;&gt;&lt;a href=&#34;#cb2-3&#34; aria-hidden=&#34;true&#34; tabindex=&#34;-1&#34;&gt;&lt;/a&gt;&lt;span class=&#34;op&#34;&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;/section&gt;</content>
   </entry>
   <entry>
     <id>https://golden.example.org/2026/second</id>
@@ -26,6 +41,13 @@
     <published>2026-04-02T00:00:00Z</published>
     <link rel="alternate" href="2026/second"/>
     <summary>Second Post An older post, so feed and index ordering have something to sort.</summary>
+    <content type="html" xml:base="https://golden.example.org/2026/second">&lt;header id=&#34;title-block-header&#34;&gt;
+
+&lt;/header&gt;
+&lt;section id=&#34;second-post&#34; class=&#34;level1&#34;&gt;
+&lt;h1&gt;Second Post&lt;/h1&gt;
+&lt;p&gt;An older post, so feed and index ordering have something to sort.&lt;/p&gt;
+&lt;/section&gt;</content>
   </entry>
   <updated>2026-06-01T00:00:00Z</updated>
 </feed>
