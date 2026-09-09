@@ -104,14 +104,12 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 	rssXML, err := eng.RenderRSS(rssData)
 	if err != nil {
 		return nil, fmt.Errorf("render rss2: %w", err)
-	} else {
-		if err := os.WriteFile(filepath.Join(outputDir, "rss2.xml"), rssXML, 0644); err != nil {
-			return nil, fmt.Errorf("write rss2.xml: %w", err)
-		} else {
-			log.Printf("  rss2 -> rss2.xml")
-			addFeedSitemapEntry(rssURL)
-		}
 	}
+	if err := os.WriteFile(filepath.Join(outputDir, "rss2.xml"), rssXML, 0644); err != nil {
+		return nil, fmt.Errorf("write rss2.xml: %w", err)
+	}
+	log.Printf("  rss2 -> rss2.xml")
+	addFeedSitemapEntry(rssURL)
 
 	// Atom
 	atomData := templates.FeedData{
@@ -127,13 +125,11 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 	atomXML, err := eng.RenderAtom(atomData)
 	if err != nil {
 		return nil, fmt.Errorf("render atom: %w", err)
-	} else {
-		if err := os.WriteFile(filepath.Join(outputDir, "atom.xml"), atomXML, 0644); err != nil {
-			return nil, fmt.Errorf("write atom.xml: %w", err)
-		} else {
-			log.Printf("  atom -> atom.xml")
-			addFeedSitemapEntry(atomURL)
-		}
 	}
+	if err := os.WriteFile(filepath.Join(outputDir, "atom.xml"), atomXML, 0644); err != nil {
+		return nil, fmt.Errorf("write atom.xml: %w", err)
+	}
+	log.Printf("  atom -> atom.xml")
+	addFeedSitemapEntry(atomURL)
 	return sitemapEntries, nil
 }

@@ -157,9 +157,8 @@ func generateSitemap(eng *templates.Engine, pages []*InputPage, site SiteConfig,
 	}
 	if err := os.WriteFile(filepath.Join(outputDir, "sitemap.xml"), xml, 0644); err != nil {
 		return fmt.Errorf("write sitemap.xml: %w", err)
-	} else {
-		log.Printf("  sitemap -> sitemap.xml")
 	}
+	log.Printf("  sitemap -> sitemap.xml")
 	return nil
 }
 
