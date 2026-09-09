@@ -561,9 +561,9 @@ func (s *Server) Handler() (http.Handler, error) {
 			return
 		}
 
-		// Parse the shared frontmatter model. A synthesized title is passed to
-		// pandoc only when the markdown body has no H1; otherwise the existing
-		// H1 supplies the title and a command-line title would duplicate it.
+		// Parse the shared frontmatter model. For markdown, pass a synthesized
+		// title to pandoc only when its body has no H1; otherwise its H1 supplies
+		// the title and a command-line title would duplicate it.
 		fm, body := frontmatter.Parse(data, filepath.Base(absPath))
 		if fm.TitleSynthesized && frontmatter.H1Title(body) != "" {
 			fm.Title = ""

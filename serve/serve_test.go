@@ -414,7 +414,11 @@ func TestServePreservesExplicitAsciiDocTitle(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/about", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "<title>Explicit Title</title>") {
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(body, "<title>Explicit Title</title>") {
 		t.Fatalf("explicit title response = %d %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(body, "<h1>Converted Heading</h1>") {
+		t.Fatalf("converted heading missing: %s", rec.Body)
 	}
 }
