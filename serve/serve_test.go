@@ -496,12 +496,19 @@ func TestHandlerRejectsOutsideSymlinksAndEncodedTraversal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, target := range []string{"/link.txt", "/%2e%2e/outside.txt"} {
-		req := httptest.NewRequest(http.MethodGet, "http://example.com"+target, nil)
+	for _, test := range []struct {
+		target string
+		want   int
+	}{
+		{target: "/link.txt", want: http.StatusInternalServerError},
+		{target: "/%2e%2e/outside.txt", want: http.StatusInternalServerError},
+		{target: "/missing.txt", want: http.StatusNotFound},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "http://example.com"+test.target, nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
-		if rec.Code != http.StatusNotFound {
-			t.Errorf("%s status = %d, body = %s", target, rec.Code, rec.Body)
+		if rec.Code != test.want {
+			t.Errorf("%s status = %d, want %d, body = %s", test.target, rec.Code, test.want, rec.Body)
 		}
 	}
 }
@@ -578,7 +585,7 @@ func TestServeRejectsTraversal(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "http://example.test"+path, nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
-		if rec.Code != http.StatusNotFound {
+		if rec.Code != http.StatusInternalServerError {
 			t.Errorf("request %q status = %d, body %q", path, rec.Code, rec.Body.String())
 		}
 	}

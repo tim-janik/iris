@@ -13,6 +13,7 @@ import (
 	"fmt"
 	htmplt "html/template"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -602,7 +603,12 @@ func (s *Server) Handler() (http.Handler, error) {
 		urlPath := normalizePath(r.URL.Path)
 		route, routeErr := resolveServeRoute(resolver, urlPath)
 		if routeErr != nil {
-			log.Printf("[404] %s (not found)", urlPath)
+			if !errors.Is(routeErr, fs.ErrNotExist) && !errors.Is(routeErr, sourcepath.ErrNotRegular) {
+				log.Printf("[500] %s: %v", urlPath, routeErr)
+				http.Error(w, fmt.Sprintf("Internal Server Error: %v", routeErr), http.StatusInternalServerError)
+				return
+			}
+			log.Printf("[404] %s: %v", urlPath, routeErr)
 			http.Error(w, fmt.Sprintf("Not Found: %s", urlPath), http.StatusNotFound)
 			return
 		}
