@@ -313,6 +313,16 @@ func TestFilterShouldTraverseNilMatchesHiddenPolicy(t *testing.T) {
 	}
 }
 
+func TestFilterShouldIncludeNilMatchesHiddenPolicy(t *testing.T) {
+	var filter *Filter
+	if filter.ShouldInclude(".hidden") {
+		t.Error("nil filter should not include hidden files")
+	}
+	if !filter.ShouldInclude("visible") {
+		t.Error("nil filter should include visible files")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Performance: compiled vs uncompiled
 // ---------------------------------------------------------------------------

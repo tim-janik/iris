@@ -159,12 +159,15 @@ func NewFilter(include, exclude []string) (*Filter, error) {
 func (f *Filter) ShouldInclude(path string) bool {
 	// Hidden files: only pass if explicitly listed in include patterns
 	if IsHidden(path) {
-		if f.Include == nil {
+		if f == nil || f.Include == nil {
 			return false
 		}
 		if !f.Include.Match(path) {
 			return false
 		}
+	}
+	if f == nil {
+		return true
 	}
 
 	// Include filter: must match if set
