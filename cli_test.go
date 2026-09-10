@@ -102,6 +102,28 @@ func TestRunSSGFailurePreservesOutput(t *testing.T) {
 	}
 }
 
+func TestRunSSGOutputMode(t *testing.T) {
+	root := t.TempDir()
+	input := filepath.Join(root, "input")
+	output := filepath.Join(root, "output")
+	if err := os.Mkdir(input, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(output, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := runSSG(ssgArgs{clearOutput: false, inputDir: input, outputDir: output, workers: 1, now: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o755 {
+		t.Errorf("output directory mode = %o, want 755", got)
+	}
+}
+
 func TestRecordServe(t *testing.T) {
 	root := t.TempDir()
 	write := func(name, content string) {

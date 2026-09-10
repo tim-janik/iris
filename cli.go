@@ -545,6 +545,9 @@ func runSSG(args ssgArgs) error {
 	if err != nil {
 		return fmt.Errorf("create staging directory: %w", err)
 	}
+	if err := os.Chmod(stage, 0755); err != nil {
+		return fmt.Errorf("set staging directory mode: %w", err)
+	}
 	defer os.RemoveAll(stage)
 	if !args.clearOutput {
 		if info, statErr := os.Stat(args.outputDir); statErr == nil && info.IsDir() {
