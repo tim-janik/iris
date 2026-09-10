@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/tim-janik/iris/sourcepath"
 )
 
 func TestMetadataRouteEnumeratesDirectMarkdownChildren(t *testing.T) {
@@ -501,5 +503,135 @@ func TestHandlerRejectsOutsideSymlinksAndEncodedTraversal(t *testing.T) {
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("%s status = %d, body = %s", target, rec.Code, rec.Body)
 		}
+	}
+}
+
+func TestResolveServeRoute(t *testing.T) {
+	root := t.TempDir()
+	for name, content := range map[string]string{
+		"index.md":      "root",
+		"docs/index.md": "docs",
+		"foo.md":        "source",
+		"foo.txt":       "static",
+		"foo.txt.md":    "shadowed source",
+	} {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(root, "dir.md"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := sourcepath.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		path         string
+		wantBase     string
+		wantConvert  bool
+		wantDirect   bool
+		wantRedirect string
+	}{
+		{path: "/", wantBase: "index.md", wantConvert: true},
+		{path: "/index", wantBase: "index.md", wantConvert: true},
+		{path: "/docs/", wantBase: "index.md", wantConvert: true},
+		{path: "/docs", wantRedirect: "/docs/"},
+		{path: "/foo.txt", wantBase: "foo.txt"},
+		{path: "/foo.md", wantBase: "foo.md", wantConvert: true, wantDirect: true},
+		{path: "/dir.md", wantRedirect: "/dir.md/"},
+	}
+	for _, test := range tests {
+		route, err := resolveServeRoute(resolver, test.path)
+		if err != nil {
+			t.Errorf("resolve %q: %v", test.path, err)
+			continue
+		}
+		if route.redirect != test.wantRedirect {
+			t.Errorf("resolve %q redirect = %q, want %q", test.path, route.redirect, test.wantRedirect)
+		}
+		if test.wantBase != "" && filepath.Base(route.path) != test.wantBase {
+			t.Errorf("resolve %q path = %q, want base %q", test.path, route.path, test.wantBase)
+		}
+		if route.convert != test.wantConvert || route.directSource != test.wantDirect {
+			t.Errorf("resolve %q flags = convert %v direct %v", test.path, route.convert, route.directSource)
+		}
+	}
+}
+
+func TestServeRejectsTraversal(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(secret, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	handler, err := (&Server{Root: root}).Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/..%2f" + filepath.Base(outside) + "/secret.txt", "/%2e%2e/secret.txt", "/.git/config"} {
+		req := httptest.NewRequest(http.MethodGet, "http://example.test"+path, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("request %q status = %d, body %q", path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestServeStaticPolicy(t *testing.T) {
+	root := t.TempDir()
+	for name := range map[string]bool{
+		"public.css":   true,
+		"private.eml":  true,
+		"private.log":  true,
+		"private.json": true,
+		"private.xml":  true,
+		"private.go":   true,
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handler, err := (&Server{Root: root}).Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]int{
+		"public.css":   http.StatusOK,
+		"private.eml":  http.StatusNotFound,
+		"private.log":  http.StatusNotFound,
+		"private.json": http.StatusNotFound,
+		"private.xml":  http.StatusNotFound,
+		"private.go":   http.StatusNotFound,
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/"+name, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("GET /%s = %d, want %d", name, rec.Code, want)
+		}
+	}
+}
+
+func TestServeSourceRedirectPreservesQuery(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "page.md"), []byte("page"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	handler, err := (&Server{Root: root}).Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/page.md?view=full", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/page?view=full" {
+		t.Fatalf("redirect = %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 }

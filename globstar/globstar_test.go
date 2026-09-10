@@ -303,23 +303,57 @@ func TestFilterExcludeOverridesInclude(t *testing.T) {
 	}
 }
 
-func TestFilterShouldTraverseNilMatchesHiddenPolicy(t *testing.T) {
-	var filter *Filter
-	if filter.ShouldTraverse(".hidden") {
-		t.Error("nil filter should not traverse hidden directories")
+func TestPatternMayContain(t *testing.T) {
+	tests := []struct {
+		pattern string
+		path    string
+		want    bool
+	}{
+		{"**/*.md", "", true},
+		{"**/*.md", "2025", true},
+		{"20*/**/*.md", "2025", true},
+		{"pages/**/*.md", "pages/docs", true},
+		{"pages/**/*.md", "posts", false},
+		{"*.md", "docs", false},
+		{"docs", "docs", false},
+		{"docs/**", "docs", true},
 	}
-	if !filter.ShouldTraverse("visible") {
-		t.Error("nil filter should traverse visible directories")
+	for _, test := range tests {
+		pattern, err := Compile(test.pattern)
+		if err != nil {
+			t.Fatalf("Compile(%q): %v", test.pattern, err)
+		}
+		if got := pattern.MayContain(test.path); got != test.want {
+			t.Errorf("Pattern(%q).MayContain(%q) = %v, want %v", test.pattern, test.path, got, test.want)
+		}
 	}
 }
 
-func TestFilterShouldIncludeNilMatchesHiddenPolicy(t *testing.T) {
-	var filter *Filter
-	if filter.ShouldInclude(".hidden") {
-		t.Error("nil filter should not include hidden files")
+func TestFilterMayContain(t *testing.T) {
+	f := mustNewFilter(t, []string{"**/*.md"}, []string{"private/**"})
+	for path, want := range map[string]bool{
+		"":             true,
+		"2025":         true,
+		"private":      false,
+		".git":         true,
+		".hidden":      true,
+		"docs.txt":     true,
+		"docs/nested":  true,
+		"docs\\nested": true,
+	} {
+		if got := f.MayContain(path); got != want {
+			t.Errorf("Filter.MayContain(%q) = %v, want %v", path, got, want)
+		}
 	}
-	if !filter.ShouldInclude("visible") {
-		t.Error("nil filter should include visible files")
+}
+
+func TestPatternNormalizesSeparators(t *testing.T) {
+	pattern, err := Compile(`pages\\**\\*.md`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pattern.Match(`pages\\nested\\post.md`) {
+		t.Error("pattern did not match normalized separators")
 	}
 }
 
@@ -352,4 +386,24 @@ func mustNewFilter(t *testing.T, include, exclude []string) *Filter {
 		t.Fatalf("NewFilter(%v, %v): %v", include, exclude, err)
 	}
 	return f
+}
+
+func TestFilterShouldTraverseNilMatchesHiddenPolicy(t *testing.T) {
+	var filter *Filter
+	if filter.ShouldTraverse(".hidden") {
+		t.Error("nil filter should not traverse hidden directories")
+	}
+	if !filter.ShouldTraverse("visible") {
+		t.Error("nil filter should traverse visible directories")
+	}
+}
+
+func TestFilterShouldIncludeNilMatchesHiddenPolicy(t *testing.T) {
+	var filter *Filter
+	if filter.ShouldInclude(".hidden") {
+		t.Error("nil filter should not include hidden files")
+	}
+	if !filter.ShouldInclude("visible") {
+		t.Error("nil filter should include visible files")
+	}
 }

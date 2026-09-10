@@ -3,8 +3,11 @@ package editlink
 import (
 	"bytes"
 	"crypto/hmac"
+	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -18,11 +21,42 @@ func resolveSourcePath(urlPath, srcRoot string) string {
 	if err != nil {
 		return ""
 	}
-	path, _, err := resolver.Resolve(urlPath, []string{"", ".md", ".adoc"})
-	if err != nil {
+	return resolveSourcePathWithResolver(resolver, urlPath)
+}
+
+func resolveSourcePathWithResolver(resolver *sourcepath.Resolver, urlPath string) string {
+	path, info, resolveErr := resolver.ResolvePath(urlPath)
+	if resolveErr == nil {
+		if info.IsDir() {
+			if urlPath != "/" && !strings.HasSuffix(urlPath, "/") {
+				return ""
+			}
+			for _, ext := range []string{".md", ".adoc"} {
+				path, info, err := sourcepath.ResolveRegular(resolver, urlPath+"index"+ext)
+				if err == nil && info.Mode().IsRegular() {
+					return path
+				}
+			}
+			return ""
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".md" || ext == ".adoc" {
+			return path
+		}
 		return ""
 	}
-	return path
+	if strings.HasSuffix(urlPath, "/") || !os.IsNotExist(resolveErr) && !errors.Is(resolveErr, sourcepath.ErrNotRegular) {
+		return ""
+	}
+	for _, ext := range []string{"", ".md", ".adoc"} {
+		candidate := urlPath + ext
+		path, info, err := sourcepath.ResolveRegular(resolver, candidate)
+		if err == nil && info.Mode().IsRegular() {
+			return path
+		}
+	}
+
+	return ""
 }
 
 // handleEditQuery checks if the request has an "edl" query parameter.
@@ -95,8 +129,16 @@ func (rc *responseCapture) flush(w http.ResponseWriter) {
 // Handler returns an HTTP middleware that wraps the given handler to provide
 // editlink injection and ?edl= query handling.
 func Handler(cfg Config, next http.Handler, srcRoot string) http.Handler {
+	resolver, err := sourcepath.New(srcRoot)
+	if err != nil {
+		return next
+	}
+	return HandlerWithResolver(cfg, next, resolver)
+}
+
+func HandlerWithResolver(cfg Config, next http.Handler, resolver *sourcepath.Resolver) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		srcPath := resolveSourcePath(r.URL.Path, srcRoot)
+		srcPath := resolveSourcePathWithResolver(resolver, r.URL.Path)
 		if srcPath == "" || (!strings.HasSuffix(srcPath, ".md") && !strings.HasSuffix(srcPath, ".adoc")) {
 			// No source file or not a convertible type — pass through
 			next.ServeHTTP(w, r)
