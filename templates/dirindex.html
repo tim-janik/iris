@@ -18,9 +18,9 @@
 <div class="authored-index">{{.Page.Content}}</div>
 {{- end}}
 
-<ul>
+<div>
 {{- range .FeedItems}}
-  <li class="postlist">
+  <div class="postlist">
     <div class="linktitle"><a href="{{.LinkHref}}">{{.Title}}</a></div>
     <div class="linksubtitle">
       <a class="linkdate" href="{{.LinkHref}}">{{formatDate .PublishedDate "day"}}</a>
@@ -32,11 +32,11 @@
     </div>
     <div class="linkdesc">{{.Excerpt}}</div>
     <div class="linkmore"><a href="{{.LinkHref}}">Continue reading</a></div>
-  </li>
+  </div>
 {{- end}}
-</ul>
+</div>
   <style>
-    #content .postlist			{ list-style: none; margin: 2em 0; }
+    #content .postlist			{ margin: 2em 0; }
     #content .postlist:first-of-type	{ margin-top: 3em; }
     #content .postlist .linktitle	{ font-size: 125%; font-weight: bold;
       line-height: 1.3; display: inline-block; }
