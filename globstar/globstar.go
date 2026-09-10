@@ -59,11 +59,6 @@ func (p *Pattern) Match(path string) bool {
 	return matchParts(p.parts, segs)
 }
 
-func (p *Pattern) MayContain(path string) bool {
-	segs := strings.Split(normalize(path), "/")
-	return mayContainParts(p.parts, segs)
-}
-
 // matchParts recursively matches pattern parts against path segments.
 // "**" matches zero or more path segments; all other segments use
 // filepath.Match semantics (*, ?, [abc]).
@@ -86,31 +81,6 @@ func matchParts(parts, segs []string) bool {
 	}
 	ok, err := filepath.Match(parts[0], segs[0])
 	return err == nil && ok && matchParts(parts[1:], segs[1:])
-}
-
-func mayContainParts(parts, segs []string) bool {
-	if len(parts) == 1 && parts[0] == "**" {
-		return true
-	}
-	if len(segs) == 0 {
-		if len(parts) > 0 && parts[0] == "**" {
-			return true
-		}
-		return len(parts) > 0
-	}
-	if len(parts) == 0 {
-		return false
-	}
-	if parts[0] == "**" {
-		for i := 0; i <= len(segs); i++ {
-			if mayContainParts(parts[1:], segs[i:]) {
-				return true
-			}
-		}
-		return false
-	}
-	ok, err := filepath.Match(parts[0], segs[0])
-	return err == nil && ok && mayContainParts(parts[1:], segs[1:])
 }
 
 // String returns the original pattern string.
@@ -167,18 +137,6 @@ func (m *Matcher) Match(path string) bool {
 	}
 	for _, p := range m.patterns {
 		if p.Match(path) {
-			return true
-		}
-	}
-	return false
-}
-
-func (m *Matcher) MayContain(path string) bool {
-	if m == nil {
-		return false
-	}
-	for _, p := range m.patterns {
-		if p.MayContain(path) {
 			return true
 		}
 	}
@@ -249,21 +207,6 @@ func (f *Filter) ShouldInclude(path string) bool {
 	}
 
 	return true
-}
-
-func (f *Filter) MayContain(path string) bool {
-	if f == nil {
-		return true
-	}
-	if f.Exclude != nil && f.Exclude.Match(path) {
-		return false
-	}
-	if IsHidden(path) {
-		if f.Include == nil || !f.Include.MayContain(path) {
-			return false
-		}
-	}
-	return f.Include == nil || f.Include.MayContain(path)
 }
 
 // ShouldTraverse reports whether a directory should be walked into.

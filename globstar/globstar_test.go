@@ -303,50 +303,6 @@ func TestFilterExcludeOverridesInclude(t *testing.T) {
 	}
 }
 
-func TestPatternMayContain(t *testing.T) {
-	tests := []struct {
-		pattern string
-		path    string
-		want    bool
-	}{
-		{"**/*.md", "", true},
-		{"**/*.md", "2025", true},
-		{"20*/**/*.md", "2025", true},
-		{"pages/**/*.md", "pages/docs", true},
-		{"pages/**/*.md", "posts", false},
-		{"*.md", "docs", false},
-		{"docs", "docs", false},
-		{"docs/**", "docs", true},
-	}
-	for _, test := range tests {
-		pattern, err := Compile(test.pattern)
-		if err != nil {
-			t.Fatalf("Compile(%q): %v", test.pattern, err)
-		}
-		if got := pattern.MayContain(test.path); got != test.want {
-			t.Errorf("Pattern(%q).MayContain(%q) = %v, want %v", test.pattern, test.path, got, test.want)
-		}
-	}
-}
-
-func TestFilterMayContain(t *testing.T) {
-	f := mustNewFilter(t, []string{"**/*.md"}, []string{"private/**"})
-	for path, want := range map[string]bool{
-		"":             true,
-		"2025":         true,
-		"private":      false,
-		".git":         true,
-		".hidden":      true,
-		"docs.txt":     true,
-		"docs/nested":  true,
-		"docs\\nested": true,
-	} {
-		if got := f.MayContain(path); got != want {
-			t.Errorf("Filter.MayContain(%q) = %v, want %v", path, got, want)
-		}
-	}
-}
-
 func TestPatternNormalizesSeparators(t *testing.T) {
 	pattern, err := Compile(`pages\\**\\*.md`)
 	if err != nil {
