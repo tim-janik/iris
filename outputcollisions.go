@@ -63,9 +63,6 @@ func validateOutputCollisions(paths []string) error {
 		}
 		dir := filepath.ToSlash(filepath.Dir(outputPathForInput(rel)))
 		index := filepath.Join(dir, "index.html")
-		if dir == "." {
-			index = "index.html"
-		}
 		if _, exists := outputs[filepath.ToSlash(index)]; exists {
 			continue
 		}
