@@ -303,13 +303,13 @@ func TestFilterExcludeOverridesInclude(t *testing.T) {
 	}
 }
 
-func TestPatternNormalizesSeparators(t *testing.T) {
-	pattern, err := Compile(`pages\\**\\*.md`)
+func TestPatternMatchesBackslashName(t *testing.T) {
+	pattern, err := Compile("*.md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !pattern.Match(`pages\\nested\\post.md`) {
-		t.Error("pattern did not match normalized separators")
+	if !pattern.Match(`a\b.md`) {
+		t.Error("pattern did not match a POSIX filename containing a backslash")
 	}
 }
 

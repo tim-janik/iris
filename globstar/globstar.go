@@ -222,7 +222,6 @@ func (f *Filter) ShouldTraverse(path string) bool {
 
 func normalize(value string) string {
 	value = filepath.ToSlash(value)
-	value = strings.ReplaceAll(value, "\\", "/")
 	value = strings.TrimPrefix(value, "./")
 	return strings.Trim(value, "/")
 }
