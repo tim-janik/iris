@@ -2,7 +2,7 @@ package editlink
 
 import (
 	"bytes"
-	"crypto/subtle"
+	"crypto/hmac"
 	"fmt"
 	"net/http"
 	"os"
@@ -42,7 +42,7 @@ func handleEditQuery(cfg Config, w http.ResponseWriter, r *http.Request, srcPath
 	}
 	if cfg.Token != "" {
 		cookie, err := r.Cookie("iris-action-token")
-		if err != nil || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(cfg.Token)) != 1 {
+		if err != nil || !hmac.Equal([]byte(cookie.Value), []byte(cfg.Token)) {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return true
 		}
