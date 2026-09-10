@@ -124,6 +124,43 @@ func TestRunSSGOutputMode(t *testing.T) {
 	}
 }
 
+func TestCopyOutputTreePreservesMode(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	dst := filepath.Join(root, "dst")
+	if err := os.MkdirAll(filepath.Join(src, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(src, "nested", "page.txt")
+	if err := os.WriteFile(file, []byte("page"), 0o601); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(file, 0o601); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyOutputTree(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	copy := filepath.Join(dst, "nested", "page.txt")
+	info, err := os.Stat(copy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o601 {
+		t.Errorf("copied mode = %o, want 601", got)
+	}
+	data, err := os.ReadFile(copy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "page" {
+		t.Errorf("copied content = %q, want page", data)
+	}
+}
+
 func TestRecordServe(t *testing.T) {
 	root := t.TempDir()
 	write := func(name, content string) {

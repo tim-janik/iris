@@ -16,9 +16,9 @@ func TestResolveContainedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, extension, err := resolver.Resolve("/page", []string{"", ".md", ".adoc"})
-	if err != nil || extension != ".md" || path != filepath.Join(root, "page.md") {
-		t.Fatalf("resolve = %q, %q, %v", path, extension, err)
+	path, info, err := resolver.ResolvePath("/page.md")
+	if err != nil || info.IsDir() || path != filepath.Join(root, "page.md") {
+		t.Fatalf("resolve = %q, %#v, %v", path, info, err)
 	}
 }
 
@@ -63,16 +63,16 @@ func TestResolveSymlinksInsideAndOutside(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := resolver.Resolve("/inside-link.md", []string{""}); err != nil {
+	if _, _, err := resolver.ResolvePath("/inside-link.md"); err != nil {
 		t.Fatalf("internal link: %v", err)
 	}
-	if _, _, err := resolver.Resolve("/sub-link/nested.txt", []string{""}); err != nil {
+	if _, _, err := resolver.ResolvePath("/sub-link/nested.txt"); err != nil {
 		t.Fatalf("internal directory link: %v", err)
 	}
-	if _, _, err := resolver.Resolve("/outside-link.md", []string{""}); !errors.Is(err, ErrOutsideRoot) || !errors.Is(err, ErrPrivatePath) {
+	if _, _, err := resolver.ResolvePath("/outside-link.md"); !errors.Is(err, ErrOutsideRoot) || !errors.Is(err, ErrPrivatePath) {
 		t.Fatalf("outside link error = %v", err)
 	}
-	if _, _, err := resolver.Resolve("/outside-dir/nested.txt", []string{""}); !errors.Is(err, ErrOutsideRoot) || !errors.Is(err, ErrPrivatePath) {
+	if _, _, err := resolver.ResolvePath("/outside-dir/nested.txt"); !errors.Is(err, ErrOutsideRoot) || !errors.Is(err, ErrPrivatePath) {
 		t.Fatalf("outside directory link error = %v", err)
 	}
 }
@@ -83,7 +83,7 @@ func TestResolveRejectsTraversal(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, path := range []string{"/../outside.md", "/nested/../../outside.md", "/nested\\outside.md"} {
-		if _, _, err := resolver.Resolve(path, []string{""}); !errors.Is(err, ErrOutsideRoot) || !errors.Is(err, ErrInvalidPath) {
+		if _, _, err := resolver.ResolvePath(path); !errors.Is(err, ErrOutsideRoot) || !errors.Is(err, ErrInvalidPath) {
 			t.Errorf("%q error = %v", path, err)
 		}
 	}

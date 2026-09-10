@@ -173,13 +173,11 @@ func resolveDirectoryRoute(resolver *sourcepath.Resolver, urlPath string) (serve
 		urlPath += "/"
 	}
 	if resolved, info, err := resolver.ResolvePath(urlPath + "index.html"); err == nil && info.Mode().IsRegular() {
-		if _, ok := staticContentType(".html"); ok {
-			return serveRoute{path: resolved}, nil
-		}
+		return serveRoute{path: resolved}, nil
 	}
 	for _, ext := range []string{".md", ".adoc"} {
-		resolved, info, err := resolver.ResolvePath(urlPath + "index" + ext)
-		if err == nil && info.Mode().IsRegular() {
+		resolved, _, err := resolver.ResolvePath(urlPath + "index" + ext)
+		if err == nil {
 			return serveRoute{path: resolved, convert: true}, nil
 		}
 		if !os.IsNotExist(err) && !errors.Is(err, sourcepath.ErrNotRegular) {
@@ -215,8 +213,8 @@ func resolveServeRoute(resolver *sourcepath.Resolver, urlPath string) (serveRout
 		return serveRoute{}, os.ErrNotExist
 	}
 	for _, ext := range []string{".md", ".adoc"} {
-		resolved, info, err := resolver.ResolvePath(urlPath + ext)
-		if err == nil && info.Mode().IsRegular() {
+		resolved, _, err := resolver.ResolvePath(urlPath + ext)
+		if err == nil {
 			return serveRoute{path: resolved, convert: true}, nil
 		}
 		if !os.IsNotExist(err) && !errors.Is(err, sourcepath.ErrNotRegular) {

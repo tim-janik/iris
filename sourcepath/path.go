@@ -41,22 +41,6 @@ func New(root string) (*Resolver, error) {
 	return &Resolver{root: realRoot}, nil
 }
 
-func (r *Resolver) Resolve(urlPath string, extensions []string) (string, string, error) {
-	for _, extension := range extensions {
-		path, info, err := r.ResolvePath(urlPath + extension)
-		if err == nil {
-			if info.IsDir() {
-				continue
-			}
-			return path, extension, nil
-		}
-		if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, ErrNotRegular) {
-			return "", "", err
-		}
-	}
-	return "", "", os.ErrNotExist
-}
-
 func (r *Resolver) ResolvePath(urlPath string) (string, os.FileInfo, error) {
 	if r == nil {
 		return "", nil, ErrOutsideRoot

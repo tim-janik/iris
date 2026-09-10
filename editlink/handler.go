@@ -14,16 +14,6 @@ import (
 	"github.com/tim-janik/iris/sourcepath"
 )
 
-// resolveSourcePath resolves the absolute path to the source file for a given
-// URL path and source root directory.
-func resolveSourcePath(urlPath, srcRoot string) string {
-	resolver, err := sourcepath.New(srcRoot)
-	if err != nil {
-		return ""
-	}
-	return resolveSourcePathWithResolver(resolver, urlPath)
-}
-
 func resolveSourcePathWithResolver(resolver *sourcepath.Resolver, urlPath string) string {
 	path, info, resolveErr := resolver.ResolvePath(urlPath)
 	if resolveErr == nil {
@@ -32,8 +22,8 @@ func resolveSourcePathWithResolver(resolver *sourcepath.Resolver, urlPath string
 				return ""
 			}
 			for _, ext := range []string{".md", ".adoc"} {
-				path, info, err := sourcepath.ResolveRegular(resolver, urlPath+"index"+ext)
-				if err == nil && info.Mode().IsRegular() {
+				path, _, err := sourcepath.ResolveRegular(resolver, urlPath+"index"+ext)
+				if err == nil {
 					return path
 				}
 			}
@@ -50,8 +40,8 @@ func resolveSourcePathWithResolver(resolver *sourcepath.Resolver, urlPath string
 	}
 	for _, ext := range []string{"", ".md", ".adoc"} {
 		candidate := urlPath + ext
-		path, info, err := sourcepath.ResolveRegular(resolver, candidate)
-		if err == nil && info.Mode().IsRegular() {
+		path, _, err := sourcepath.ResolveRegular(resolver, candidate)
+		if err == nil {
 			return path
 		}
 	}
@@ -139,7 +129,7 @@ func Handler(cfg Config, next http.Handler, srcRoot string) http.Handler {
 func HandlerWithResolver(cfg Config, next http.Handler, resolver *sourcepath.Resolver) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		srcPath := resolveSourcePathWithResolver(resolver, r.URL.Path)
-		if srcPath == "" || (!strings.HasSuffix(srcPath, ".md") && !strings.HasSuffix(srcPath, ".adoc")) {
+		if srcPath == "" {
 			// No source file or not a convertible type — pass through
 			next.ServeHTTP(w, r)
 			return

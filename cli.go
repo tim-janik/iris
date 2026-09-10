@@ -4,6 +4,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -110,29 +111,6 @@ func parseSSGArgs() ssgArgs {
 		os.Exit(1)
 	}
 
-	inputDir, err := filepath.Abs(args[0])
-	if err != nil {
-		log.Fatalf("input path: %v", err)
-	}
-	outputDir, err := filepath.Abs(args[1])
-	if err != nil {
-		log.Fatalf("output path: %v", err)
-	}
-	configPath := *configFile
-	if configPath != "" {
-		configPath, err = filepath.Abs(configPath)
-		if err != nil {
-			log.Fatalf("config path: %v", err)
-		}
-	}
-	templatePath := *templateDir
-	if templatePath != "" {
-		templatePath, err = filepath.Abs(templatePath)
-		if err != nil {
-			log.Fatalf("template path: %v", err)
-		}
-	}
-
 	w := *workers
 	if w < 0 {
 		log.Fatalf("invalid worker count: %d", w)
@@ -141,7 +119,7 @@ func parseSSGArgs() ssgArgs {
 		w = runtime.NumCPU()
 	}
 
-	return ssgArgs{clearOutput: *clearOutput, inputDir: inputDir, outputDir: outputDir, configFile: configPath, templateDir: templatePath, workers: w, now: parseNow(*nowFlag)}
+	return ssgArgs{clearOutput: *clearOutput, inputDir: args[0], outputDir: args[1], configFile: *configFile, templateDir: *templateDir, workers: w, now: parseNow(*nowFlag)}
 }
 
 // parseNow resolves the effective "current time" for a build: the -now flag
@@ -345,74 +323,45 @@ func pathWithin(base, target string) bool {
 }
 
 func canonicalPath(path string) (string, error) {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	var suffix []string
-	for current := absPath; ; current = filepath.Dir(current) {
-		realPath, err := filepath.EvalSymlinks(current)
-		if err == nil {
-			for i := len(suffix) - 1; i >= 0; i-- {
-				realPath = filepath.Join(realPath, suffix[i])
-			}
-			return realPath, nil
-		}
-		if !os.IsNotExist(err) || filepath.Dir(current) == current {
-			return "", err
-		}
-		suffix = append(suffix, filepath.Base(current))
-	}
+	return resolve_output_path(path)
 }
 
 func validateSSGArgs(args ssgArgs) error {
 	if args.workers <= 0 {
 		return fmt.Errorf("worker count must be positive")
 	}
-	inputDir, err := filepath.Abs(args.inputDir)
-	if err != nil {
-		return fmt.Errorf("input path: %w", err)
-	}
-	outputDir, err := filepath.Abs(args.outputDir)
-	if err != nil {
-		return fmt.Errorf("output path: %w", err)
-	}
-	canonicalInput, err := canonicalPath(inputDir)
+	canonicalInput, err := canonicalPath(args.inputDir)
 	if err != nil {
 		return fmt.Errorf("resolve input path: %w", err)
 	}
-	canonicalOutput, err := canonicalPath(outputDir)
+	canonicalOutput, err := canonicalPath(args.outputDir)
 	if err != nil {
 		return fmt.Errorf("resolve output path: %w", err)
 	}
-	inputInfo, err := os.Stat(inputDir)
+	inputInfo, err := os.Stat(args.inputDir)
 	if err != nil {
 		return fmt.Errorf("stat input directory: %w", err)
 	}
 	if !inputInfo.IsDir() {
-		return fmt.Errorf("input path is not a directory: %s", inputDir)
+		return fmt.Errorf("input path is not a directory: %s", args.inputDir)
 	}
 	if pathWithin(canonicalInput, canonicalOutput) || pathWithin(canonicalOutput, canonicalInput) {
-		return fmt.Errorf("input and output paths overlap: %s and %s", inputDir, outputDir)
+		return fmt.Errorf("input and output paths overlap: %s and %s", args.inputDir, args.outputDir)
 	}
-	if info, err := os.Lstat(outputDir); err == nil {
+	if info, err := os.Lstat(args.outputDir); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-			return fmt.Errorf("output path is not a directory: %s", outputDir)
+			return fmt.Errorf("output path is not a directory: %s", args.outputDir)
 		}
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("stat output directory: %w", err)
 	}
 	if args.templateDir != "" {
-		templateDir, err := filepath.Abs(args.templateDir)
-		if err != nil {
-			return fmt.Errorf("template path: %w", err)
-		}
-		canonicalTemplate, err := canonicalPath(templateDir)
+		canonicalTemplate, err := canonicalPath(args.templateDir)
 		if err != nil {
 			return fmt.Errorf("resolve template path: %w", err)
 		}
 		if pathWithin(canonicalOutput, canonicalTemplate) || pathWithin(canonicalTemplate, canonicalOutput) {
-			return fmt.Errorf("template and output paths overlap: %s and %s", templateDir, outputDir)
+			return fmt.Errorf("template and output paths overlap: %s and %s", args.templateDir, args.outputDir)
 		}
 	}
 	return nil
@@ -437,11 +386,32 @@ func copyOutputTree(src, dst string) error {
 		if d.Type()&os.ModeSymlink != 0 || !d.Type().IsRegular() {
 			return fmt.Errorf("cannot copy non-regular output entry: %s", path)
 		}
-		data, err := os.ReadFile(path)
+		info, err := d.Info()
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(target, data, 0644)
+		src, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		dst, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
+		if err != nil {
+			src.Close()
+			return err
+		}
+		if _, err := io.Copy(dst, src); err != nil {
+			src.Close()
+			dst.Close()
+			return err
+		}
+		if err := src.Close(); err != nil {
+			dst.Close()
+			return err
+		}
+		if err := dst.Close(); err != nil {
+			return err
+		}
+		return os.Chmod(target, info.Mode().Perm())
 	})
 }
 
@@ -591,6 +561,3 @@ func ssgMain() {
 		log.Fatalf("ssg: %v", err)
 	}
 }
-
-// loadCommentsForPages loads comments from .eml files and attaches them
-// to the corresponding InputPage structs.

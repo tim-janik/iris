@@ -293,6 +293,26 @@ func TestFilterHiddenWithExplicitInclude(t *testing.T) {
 	}
 }
 
+func TestFilterShouldTraverseNilMatchesHiddenPolicy(t *testing.T) {
+	var filter *Filter
+	if filter.ShouldTraverse(".hidden") {
+		t.Error("nil filter should not traverse hidden directories")
+	}
+	if !filter.ShouldTraverse("visible") {
+		t.Error("nil filter should traverse visible directories")
+	}
+}
+
+func TestFilterShouldIncludeNilMatchesHiddenPolicy(t *testing.T) {
+	var filter *Filter
+	if filter.ShouldInclude(".hidden") {
+		t.Error("nil filter should not include hidden files")
+	}
+	if !filter.ShouldInclude("visible") {
+		t.Error("nil filter should include visible files")
+	}
+}
+
 func TestFilterExcludeOverridesInclude(t *testing.T) {
 	f, _ := NewFilter([]string{"**"}, []string{"secret/*"})
 	if f.ShouldInclude("secret/password.txt") {
@@ -342,24 +362,4 @@ func mustNewFilter(t *testing.T, include, exclude []string) *Filter {
 		t.Fatalf("NewFilter(%v, %v): %v", include, exclude, err)
 	}
 	return f
-}
-
-func TestFilterShouldTraverseNilMatchesHiddenPolicy(t *testing.T) {
-	var filter *Filter
-	if filter.ShouldTraverse(".hidden") {
-		t.Error("nil filter should not traverse hidden directories")
-	}
-	if !filter.ShouldTraverse("visible") {
-		t.Error("nil filter should traverse visible directories")
-	}
-}
-
-func TestFilterShouldIncludeNilMatchesHiddenPolicy(t *testing.T) {
-	var filter *Filter
-	if filter.ShouldInclude(".hidden") {
-		t.Error("nil filter should not include hidden files")
-	}
-	if !filter.ShouldInclude("visible") {
-		t.Error("nil filter should include visible files")
-	}
 }
