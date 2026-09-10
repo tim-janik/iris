@@ -634,4 +634,13 @@ func TestServeSourceRedirectPreservesQuery(t *testing.T) {
 	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/page?view=full" {
 		t.Fatalf("redirect = %d %q", rec.Code, rec.Header().Get("Location"))
 	}
+	req = httptest.NewRequest(http.MethodGet, "/page.md?noredirect", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || rec.Body.String() != "page" {
+		t.Fatalf("noredirect = %d %q", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/markdown; charset=utf-8" {
+		t.Fatalf("noredirect content type = %q", got)
+	}
 }

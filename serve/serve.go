@@ -622,6 +622,9 @@ func (s *Server) Handler() (http.Handler, error) {
 			http.Redirect(w, r, target, http.StatusFound)
 			return
 		}
+		if route.directSource {
+			route.convert = false
+		}
 
 		absPath := route.path
 		convertToHTML := route.convert
