@@ -98,7 +98,7 @@ func TestResolverRejectsTraversalAndPrivatePaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/../page.md", "/%2e%2e/page.md", "/.git/config", "/page\\other"} {
+	for _, path := range []string{"/../page.md", "/.git/config", "/page\\other"} {
 		_, _, err := resolver.ResolvePath(path)
 		if err == nil {
 			t.Errorf("Resolve(%q) succeeded", path)
@@ -111,6 +111,22 @@ func TestResolverRejectsTraversalAndPrivatePaths(t *testing.T) {
 	_, _, err = resolver.ResolvePath("/.git/config")
 	if !errors.Is(err, ErrPrivatePath) {
 		t.Errorf("Resolve private error = %v, want ErrPrivatePath", err)
+	}
+}
+
+func TestResolverAllowsPercentEscapesInFilename(t *testing.T) {
+	root := t.TempDir()
+	name := "literal%2e.md"
+	if err := os.WriteFile(filepath.Join(root, name), []byte("page"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, info, err := resolver.ResolvePath("/" + name)
+	if err != nil || info.IsDir() || path != filepath.Join(root, name) {
+		t.Errorf("ResolvePath(%q) = %q, %#v, %v", name, path, info, err)
 	}
 }
 

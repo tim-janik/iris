@@ -3,7 +3,6 @@ package sourcepath
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,10 +99,7 @@ func ResolveRegular(r *Resolver, urlPath string) (string, os.FileInfo, error) {
 }
 
 func splitURLPath(urlPath string) ([]string, error) {
-	decoded, err := url.PathUnescape(urlPath)
-	if err != nil {
-		return nil, ErrInvalidPath
-	}
+	decoded := urlPath
 	if !strings.HasPrefix(decoded, "/") {
 		decoded = "/" + decoded
 	}
