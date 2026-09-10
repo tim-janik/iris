@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -18,6 +21,10 @@ desc_len = -1
 		t.Fatalf("write config: %v", err)
 	}
 
+	var logs bytes.Buffer
+	oldWriter := log.Writer()
+	log.SetOutput(&logs)
+	defer log.SetOutput(oldWriter)
 	cfg := loadSiteConfig(dir, path)
 	def := defaultSiteConfig()
 	if cfg.TeaserLen != def.TeaserLen {
@@ -28,5 +35,11 @@ desc_len = -1
 	}
 	if cfg.Title != "Test Site" {
 		t.Errorf("Title = %q, want valid settings to be kept", cfg.Title)
+	}
+	if strings.Count(logs.String(), "teaser_len -50 is negative") != 1 {
+		t.Errorf("teaser_len warning = %q", logs.String())
+	}
+	if strings.Count(logs.String(), "desc_len -1 is negative") != 1 {
+		t.Errorf("desc_len warning = %q", logs.String())
 	}
 }
