@@ -9,9 +9,11 @@ import (
 	"crypto/subtle"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	htmplt "html/template"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -129,6 +131,115 @@ func normalizePath(urlPath string) string {
 		return "/" + urlPath
 	}
 	return urlPath
+}
+
+type serveRoute struct {
+	path         string
+	convert      bool
+	directSource bool
+	redirect     string
+}
+
+var publicStaticExtensions = map[string]bool{
+	".css": true, ".cjs": true, ".gif": true, ".htm": true,
+	".html": true, ".ico": true, ".jpeg": true, ".jpg": true,
+	".js": true, ".mjs": true, ".mp3": true, ".mp4": true,
+	".ogg": true, ".otf": true, ".pdf": true, ".png": true,
+	".svg": true, ".svgz": true, ".ttf": true, ".txt": true,
+	".wav": true, ".webm": true, ".webp": true, ".woff": true,
+	".woff2": true,
+}
+
+func isSourceExtension(ext string) bool {
+	return ext == ".md" || ext == ".adoc"
+}
+
+func staticContentType(ext string) (string, bool) {
+	if ext == ".md" || ext == ".adoc" || ext == ".markdown" {
+		return mimetype.Lookup(ext), true
+	}
+	if !publicStaticExtensions[ext] {
+		return "", false
+	}
+	mime := mimetype.Lookup(ext)
+	if mime == "" {
+		return "", false
+	}
+	return mime, true
+}
+
+func resolveDirectoryRoute(resolver *sourcepath.Resolver, urlPath string) (serveRoute, error) {
+	if !strings.HasSuffix(urlPath, "/") {
+		urlPath += "/"
+	}
+	if resolved, info, err := resolver.ResolvePath(urlPath + "index.html"); err == nil && info.Mode().IsRegular() {
+		return serveRoute{path: resolved}, nil
+	}
+	for _, ext := range []string{".md", ".adoc"} {
+		resolved, _, err := resolver.ResolvePath(urlPath + "index" + ext)
+		if err == nil {
+			return serveRoute{path: resolved, convert: true}, nil
+		}
+		if !os.IsNotExist(err) && !errors.Is(err, sourcepath.ErrNotRegular) {
+			return serveRoute{}, err
+		}
+	}
+	return serveRoute{}, os.ErrNotExist
+}
+
+func resolveServeRoute(resolver *sourcepath.Resolver, urlPath string) (serveRoute, error) {
+	urlPath = normalizePath(urlPath)
+	resolved, info, err := resolver.ResolvePath(urlPath)
+	if err == nil {
+		if info.IsDir() {
+			if urlPath != "/" && !strings.HasSuffix(urlPath, "/") {
+				return serveRoute{redirect: templates.EncodeURLPath(urlPath) + "/"}, nil
+			}
+			return resolveDirectoryRoute(resolver, urlPath)
+		}
+		ext := strings.ToLower(filepath.Ext(resolved))
+		if isSourceExtension(ext) {
+			return serveRoute{path: resolved, convert: true, directSource: true}, nil
+		}
+		if _, ok := staticContentType(ext); ok {
+			return serveRoute{path: resolved}, nil
+		}
+		return serveRoute{}, os.ErrNotExist
+	}
+	if !os.IsNotExist(err) && !errors.Is(err, sourcepath.ErrNotRegular) {
+		return serveRoute{}, err
+	}
+	if strings.HasSuffix(urlPath, "/") {
+		return serveRoute{}, os.ErrNotExist
+	}
+	for _, ext := range []string{".md", ".adoc"} {
+		resolved, _, err := resolver.ResolvePath(urlPath + ext)
+		if err == nil {
+			return serveRoute{path: resolved, convert: true}, nil
+		}
+		if !os.IsNotExist(err) && !errors.Is(err, sourcepath.ErrNotRegular) {
+			return serveRoute{}, err
+		}
+	}
+	return serveRoute{}, os.ErrNotExist
+}
+
+func cleanSourceURL(urlPath string) string {
+	clean := strings.TrimSuffix(urlPath, filepath.Ext(urlPath))
+	if strings.HasSuffix(clean, "/index") {
+		clean = strings.TrimSuffix(clean, "index")
+		if clean == "" {
+			return "/"
+		}
+	}
+	return templates.EncodeURLPath(clean)
+}
+
+func withQuery(urlPath, rawQuery string) string {
+	if rawQuery == "" {
+		return urlPath
+	}
+	return urlPath + "?" + rawQuery
 }
 
 func serveRootPrefix(urlPath string) string {
@@ -450,14 +561,14 @@ func (s *Server) Handler() (http.Handler, error) {
 	if s.AdocConfig.Attributes == nil {
 		s.AdocConfig = adoc.DefaultConfig()
 	}
+	resolver, err := sourcepath.New(s.Root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve serve root: %w", err)
+	}
 
 	eng, err := templates.New(s.TemplateDir)
 	if err != nil {
 		return nil, fmt.Errorf("init templates: %w", err)
-	}
-	resolver, err := sourcepath.New(s.Root)
-	if err != nil {
-		return nil, fmt.Errorf("resolve serve root: %w", err)
 	}
 
 	cfg := s.PandocConfig
@@ -488,35 +599,39 @@ func (s *Server) Handler() (http.Handler, error) {
 		}
 
 		urlPath := normalizePath(r.URL.Path)
-
-		// Redirect .md/.adoc URLs to clean URLs (e.g. /foo.md → /foo)
-		// unless ?noredirect is set to request the raw source.
-		if ext := filepath.Ext(urlPath); ext == ".md" || ext == ".adoc" {
-			if !r.URL.Query().Has("noredirect") {
-				if _, _, err := resolver.Resolve(urlPath, []string{""}); err == nil {
-					target := templates.EncodeURLPath(strings.TrimSuffix(urlPath, ext))
-					if target == "" {
-						target = "/"
-					}
-					log.Printf("[302] %s -> %s", urlPath, target)
-					http.Redirect(w, r, target, http.StatusFound)
-					return
-				}
+		route, routeErr := resolveServeRoute(resolver, urlPath)
+		if routeErr != nil {
+			if !errors.Is(routeErr, fs.ErrNotExist) && !errors.Is(routeErr, sourcepath.ErrNotRegular) {
+				log.Printf("[500] %s: %v", urlPath, routeErr)
+				http.Error(w, fmt.Sprintf("Internal Server Error: %v", routeErr), http.StatusInternalServerError)
+				return
 			}
-		}
-
-		// Try the path as-is first, then append .md, then .adoc.
-		// convertToHTML is true only when we found the file by appending an extension
-		// (i.e. the user requested /foo/bar and we resolved it to /foo/bar.md).
-		absPath, extension, err := resolver.Resolve(urlPath, []string{"", ".md", ".adoc"})
-		found := err == nil
-		convertToHTML := found && extension != ""
-
-		if !found {
-			log.Printf("[404] %s (not found)", urlPath)
+			log.Printf("[404] %s: %v", urlPath, routeErr)
 			http.Error(w, fmt.Sprintf("Not Found: %s", urlPath), http.StatusNotFound)
 			return
 		}
+		if route.redirect != "" {
+			target := withQuery(route.redirect, r.URL.RawQuery)
+			log.Printf("[301] %s -> %s", urlPath, target)
+			http.Redirect(w, r, target, http.StatusMovedPermanently)
+			return
+		}
+		if route.directSource && !r.URL.Query().Has("noredirect") {
+			target := cleanSourceURL(urlPath)
+			if target == "" {
+				target = "/"
+			}
+			target = withQuery(target, r.URL.RawQuery)
+			log.Printf("[302] %s -> %s", urlPath, target)
+			http.Redirect(w, r, target, http.StatusFound)
+			return
+		}
+		if route.directSource {
+			route.convert = false
+		}
+
+		absPath := route.path
+		convertToHTML := route.convert
 
 		ext := strings.ToLower(filepath.Ext(absPath))
 

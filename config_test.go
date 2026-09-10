@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestLoadSiteConfigRejectsNegativeLengths(t *testing.T) {
+func TestLoadSiteConfigCorrectsNegativeLengths(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "_siteconfig.toml")
 	content := `
