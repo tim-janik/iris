@@ -263,6 +263,7 @@ func serveMetadata(w http.ResponseWriter, r *http.Request, root, urlPath string)
 		} else {
 			cleanPath = dirURL + "/" + cleanPath
 		}
+		cleanPath = templates.EncodeURLPath(cleanPath)
 		keywords := fm.Keywords
 		if keywords == nil {
 			keywords = []string{}
@@ -488,7 +489,7 @@ func (s *Server) Handler() (http.Handler, error) {
 		if ext := filepath.Ext(urlPath); ext == ".md" || ext == ".adoc" {
 			if !r.URL.Query().Has("noredirect") {
 				if _, err := os.Stat(filepath.Join(s.Root, urlPath)); err == nil {
-					target := strings.TrimSuffix(urlPath, ext)
+					target := templates.EncodeURLPath(strings.TrimSuffix(urlPath, ext))
 					if target == "" {
 						target = "/"
 					}

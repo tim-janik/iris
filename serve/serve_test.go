@@ -70,6 +70,43 @@ func TestMetadataRouteEnumeratesDirectMarkdownChildren(t *testing.T) {
 	}
 }
 
+func TestMetadataRouteEscapesFilenameURL(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "page#x.md"), []byte("---\ntitle: page\n---\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/..~meta~?cmd=get-frontmatter-array", nil)
+	rec := httptest.NewRecorder()
+	(&Server{Root: root}).handleMetadataRoute(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"url":"/page%23x"`) {
+		t.Errorf("metadata URL was not escaped: %s", rec.Body)
+	}
+}
+
+func TestServeRedirectEscapesFilenameURL(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "page#x.md"), []byte("---\ntitle: page\n---\nbody\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{Root: root}
+	handler, err := server.Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/page%23x.md", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
+	}
+	if got := rec.Header().Get("Location"); got != "/page%23x" {
+		t.Errorf("redirect location = %q", got)
+	}
+}
+
 func TestMetadataRouteEmptyAndTraversal(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "empty"), 0755); err != nil {

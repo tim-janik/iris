@@ -22,6 +22,7 @@ import (
 	htmplt "html/template"
 	"html"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -110,6 +111,32 @@ func ResolveStylesheet(stylesheet, root string) string {
 		root = "."
 	}
 	return root + "/" + s
+}
+
+// EncodeURLPath escapes a filesystem path for use as a URL path.
+func EncodeURLPath(path string) string {
+	path = strings.ReplaceAll(filepath.ToSlash(path), "\\", "/")
+	if path == "" {
+		return ""
+	}
+	return (&url.URL{Path: path}).EscapedPath()
+}
+
+// JoinURLPath appends an escaped path to a base URL.
+func JoinURLPath(base, path string) string {
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return strings.TrimRight(base, "/") + "/" + strings.TrimLeft(EncodeURLPath(path), "/")
+	}
+	basePath := strings.TrimRight(parsed.Path, "/")
+	path = strings.TrimLeft(strings.ReplaceAll(filepath.ToSlash(path), "\\", "/"), "/")
+	if path == "" {
+		parsed.Path = basePath + "/"
+	} else {
+		parsed.Path = basePath + "/" + path
+	}
+	parsed.RawPath = ""
+	return parsed.String()
 }
 
 // FeedItem represents a single item in a feed or directory listing.
@@ -261,15 +288,7 @@ func New(templateDir string) (*Engine, error) {
 		},
 		// urlJoin joins a base URL and a path, ensuring exactly one slash between them.
 		// If path is empty, returns base with a trailing slash.
-		"urlJoin": func(base, path string) string {
-			if path == "" {
-				if strings.HasSuffix(base, "/") {
-					return base
-				}
-				return base + "/"
-			}
-			return strings.TrimRight(base, "/") + "/" + strings.TrimLeft(path, "/")
-		},
+		"urlJoin": JoinURLPath,
 	}
 
 	// HTML-specific functions (return htmplt.HTML for raw HTML injection).
@@ -560,7 +579,7 @@ func BuildFeedItems(
 
 		item := FeedItem{
 			Title:         pg.Title,
-			URL:           site.URL + "/" + strings.TrimPrefix(urlPath, "/"),
+			URL:           JoinURLPath(site.URL, urlPath),
 			PublishedDate: pg.PublishedDate,
 			ModifiedDate:  pg.ModifiedDate,
 			Keywords:      pg.Keywords,
@@ -571,7 +590,7 @@ func BuildFeedItems(
 		}
 
 		// Compute relative link href (mirrors page.link_href(pg))
-		item.LinkHref = computeRelativeHref(baseDir, href)
+		item.LinkHref = EncodeURLPath(computeRelativeHref(baseDir, href))
 
 		items = append(items, item)
 	}

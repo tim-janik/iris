@@ -357,7 +357,7 @@ func ssgMain() {
 	// Default the template feed link (page <link rel="alternate">) to the RSS
 	// feed path when feed_url is unset; generateFeeds keeps site.FeedURL raw.
 	if siteGo.FeedURL == "" {
-		siteGo.FeedURL = site.URL + "/rss2.xml"
+		siteGo.FeedURL = templates.JoinURLPath(site.URL, "rss2.xml")
 	}
 
 	// Candidate files = union(include_glob, asset_glob); files matching neither are skipped
