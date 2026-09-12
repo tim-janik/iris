@@ -22,6 +22,32 @@ def load_bot ():
   return bot
 
 
+class PartialSocket:
+  def __init__ (self, stalled = False):
+    self.data = bytearray()
+    self.timeout = None
+    self.write_timeout = None
+    self.stalled = stalled
+
+  def gettimeout (self):
+    return self.timeout
+
+  def settimeout (self, value):
+    self.timeout = value
+
+  def send (self, data):
+    self.write_timeout = self.timeout
+    if self.stalled:
+      raise TimeoutError ("mock write timed out")
+    count = min (3, len (data))
+    self.data.extend (data[:count])
+    return count
+
+  def sendall (self, data):
+    while data:
+      data = data[self.send (data):]
+
+
 class BotTests (unittest.TestCase):
   def setUp (self):
     self.bot = load_bot()
@@ -41,7 +67,7 @@ class BotTests (unittest.TestCase):
           self.bot.sendline (command + " dummy-password")
         self.assertNotIn ("dummy-password", output.getvalue())
         self.assertEqual (output.getvalue(), "PASS <redacted>\n")
-        self.bot.ircsock.send.assert_called_with ((command + " dummy-password\r\n").encode())
+        self.bot.ircsock.sendall.assert_called_with ((command + " dummy-password\r\n").encode())
 
   def test_quiet_password_has_no_log (self):
     self.bot.args.quiet = True
@@ -55,6 +81,23 @@ class BotTests (unittest.TestCase):
     with contextlib.redirect_stdout (output):
       self.bot.sendline ("NICK test")
     self.assertEqual (output.getvalue(), "NICK test\n")
+
+  def test_partial_writes_send_complete_utf8_command (self):
+    self.bot.args.quiet = True
+    self.bot.ircsock = PartialSocket()
+    self.bot.sendline ("PRIVMSG #test :Grüße")
+    self.assertEqual (self.bot.ircsock.data, "PRIVMSG #test :Grüße\r\n".encode())
+    self.assertEqual (self.bot.ircsock.write_timeout, self.bot.socket_timeout)
+    self.assertIsNone (self.bot.ircsock.timeout)
+
+  def test_stalled_write_fails_and_restores_timeout (self):
+    self.bot.args.quiet = True
+    self.bot.ircsock = PartialSocket (stalled = True)
+    self.bot.ircsock.timeout = 7
+    with self.assertRaises (TimeoutError):
+      self.bot.sendline ("PING :test")
+    self.assertEqual (self.bot.ircsock.write_timeout, self.bot.socket_timeout)
+    self.assertEqual (self.bot.ircsock.timeout, 7)
 
 
 if __name__ == "__main__":
