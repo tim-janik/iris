@@ -1,6 +1,7 @@
 import contextlib
 import importlib.util
 import io
+import json
 from pathlib import Path
 import sys
 import unittest
@@ -500,6 +501,59 @@ class BotTests (unittest.TestCase):
       self.assertEqual (status, 1)
       self.assertIn ('no text to send', output)
       self.bot.socket.socket.assert_not_called()
+
+  def test_github_notification_uses_sanitized_event_fields (self):
+    with self.mock_server() as (server, clock):
+      event = {'repository': {'full_name': 'owner/repo'}, 'pusher': {'name': 'author\r\nQUIT'},
+               'ref': 'refs/heads/trunk', 'head_commit': {'message': 'Fix the bot\nDetails', 'url': 'https://example.invalid/commit'}}
+      self.bot.os.environ.update (GITHUB_EVENT_PATH = 'mock-event.json', IRCBOT_JOBS = 'success failure')
+      with mock.patch.object (self.bot.os.path, 'exists', return_value = True):
+        with mock.patch ('builtins.open', mock.mock_open (read_data = json.dumps (event))):
+          status, output = self.run_main ('-G')
+      self.assertEqual (status, 0)
+      messages = [line for line in server.sent if line.startswith ('PRIVMSG ')]
+      self.assertEqual (len (messages), 1)
+      self.assertIn ('author  QUIT', messages[0])
+      self.assertIn ('FAILURE', messages[0])
+      self.assertIn ('Fix the bot - https://example.invalid/commit', messages[0])
+      self.assertNotIn ('Details', messages[0])
+      server.sent.clear()
+      status, output = self.run_main ('plain message')
+      self.assertEqual (status, 0)
+      self.assertEqual ([line for line in server.sent if line.startswith ('PRIVMSG ')],
+                        ['PRIVMSG #test :plain message'])
+
+  def test_password_registration_never_logs_dummy_secret (self):
+    with self.mock_server() as (server, clock):
+      self.bot.args.quiet = False
+      self.bot.os.environ['IRCBOT_PASS'] = 'dummy-secret'
+      output = io.StringIO()
+      with contextlib.redirect_stdout (output), contextlib.redirect_stderr (output):
+        self.bot.run_session()
+      self.assertIn ('PASS dummy-secret', server.sent)
+      self.assertIn ('PASS <redacted>', output.getvalue())
+      self.assertNotIn ('dummy-secret', output.getvalue())
+
+  def test_ping_requires_its_own_pong_token (self):
+    for correct in (False, True):
+      with self.subTest (correct = correct), self.mock_server() as (server, clock):
+        self.bot.args.ping = True
+
+        def respond (line):
+          if line.startswith ('PING '):
+            server.queue (':mock PONG mock :wrong-token', ':mock NOTICE YYBOT :PONG pleasegetbacktome')
+            if not correct:
+              return
+          server.default_response (line)
+
+        server.respond = respond
+        if correct:
+          self.bot.run_session()
+          self.assertIn ('PRIVMSG #test :hello', server.sent)
+        else:
+          with self.assertRaises (TimeoutError):
+            self.bot.run_session()
+          self.assertFalse (any (line.startswith ('PRIVMSG ') for line in server.sent))
 
 
 if __name__ == "__main__":
