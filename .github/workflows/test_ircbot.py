@@ -312,6 +312,53 @@ class BotTests (unittest.TestCase):
     self.assertFalse (self.bot.have_echo_message)
     self.assertEqual (self.bot.readall_buffer, b'')
 
+  def test_unicode_subject_is_split_without_losing_text (self):
+    with self.mock_server() as (server, clock):
+      subject = 'Grüße 🌻 ' * 200
+      self.bot.args.message = [subject]
+      self.bot.run_session()
+      messages = [line for line in server.sent if line.startswith ('PRIVMSG ')]
+      self.assertGreater (len (messages), 1)
+      self.assertEqual (''.join (line.split (' :', 1)[1] for line in messages), subject)
+      self.assertTrue (all (len ((line + '\r\n').encode()) <= self.bot.max_line_bytes for line in messages))
+
+  def test_command_injection_is_rejected_before_socket_use (self):
+    for value in ('PASS secret\r\nJOIN #bad', 'PRIVMSG #test :bad\0text', 'NICK ' + 'x' * 512):
+      with self.subTest (value = value), self.assertRaises (self.bot.Fatal):
+        self.bot.sendline (value)
+    self.bot.ircsock.sendall.assert_not_called()
+
+  def test_bad_connection_arguments_fail_before_connect (self):
+    for name, value in (('j', '#test\r\nJOIN #bad'), ('n', 'bad nick'), ('n', 'x' * 512)):
+      with self.subTest (name = name), self.mock_server() as (server, clock):
+        setattr (self.bot.args, name, value)
+        with self.assertRaises (self.bot.Fatal):
+          self.bot.run_session()
+        self.assertIsNone (server.address)
+
+  def test_message_controls_are_text_not_commands (self):
+    with self.mock_server() as (server, clock):
+      self.bot.args.message = ['hello\r\nJOIN #bad\0\t\x1b']
+      self.bot.run_session()
+      messages = [line for line in server.sent if line.startswith ('PRIVMSG ')]
+      self.assertEqual (messages, ['PRIVMSG #test :hello ', 'PRIVMSG #test :JOIN #bad   '])
+      self.assertNotIn ('JOIN #bad', server.sent)
+
+  def test_multiline_messages_keep_rate_limit (self):
+    with self.mock_server() as (server, clock):
+      self.bot.args.message = ['one\ntwo\nthree']
+      sent_at = []
+
+      def respond (line):
+        if line.startswith ('PRIVMSG '):
+          sent_at.append (clock.now)
+        server.default_response (line)
+
+      server.respond = respond
+      self.bot.run_session()
+      self.assertEqual (len (sent_at), 3)
+      self.assertTrue (all (b - a >= self.bot.message_rate for a, b in zip (sent_at, sent_at[1:])))
+
 
 if __name__ == "__main__":
   unittest.main()
