@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - { uses: actions/checkout@v4, with: { fetch-depth: 0 } }
+      - name: Test IRC bot with mocked sockets
+        run: python3 -m unittest discover -s .github/workflows -p test_ircbot.py -v
       - name: Install Pandoc and Asciidoctor
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y pandoc asciidoctor
       - { uses: actions/setup-go@v5, with: { go-version-file: go.mod, cache: true } }
