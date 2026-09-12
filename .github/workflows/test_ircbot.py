@@ -359,6 +359,148 @@ class BotTests (unittest.TestCase):
       self.assertEqual (len (sent_at), 3)
       self.assertTrue (all (b - a >= self.bot.message_rate for a, b in zip (sent_at, sent_at[1:])))
 
+  def run_main (self, *arguments):
+    output = io.StringIO()
+    status = 0
+    with contextlib.redirect_stderr (output):
+      try:
+        self.bot.main (['-q', '-s', 'mock.invalid', '-j', '#test', *arguments])
+      except SystemExit as error:
+        status = error.code
+    return status, output.getvalue()
+
+  def test_network_guard_blocks_socket_creation (self):
+    with self.assertRaisesRegex (AssertionError, 'must not use real sockets'):
+      self.bot.socket.socket()
+
+  def test_missing_echo_capability_prevents_sending (self):
+    with self.mock_server() as (server, clock):
+      def respond (line):
+        if line == 'CAP REQ :echo-message':
+          server.queue (':mock CAP * NAK :echo-message')
+        else:
+          server.default_response (line)
+
+      server.respond = respond
+      status, output = self.run_main ('hello')
+      self.assertEqual (status, 1)
+      self.assertIn ('refusing unverified delivery', output)
+      self.assertEqual (self.bot.socket.socket.call_count, 1)
+      self.assertFalse (any (line.startswith ('PRIVMSG ') for line in server.sent))
+
+  def test_lost_second_echo_does_not_resend_or_continue (self):
+    with self.mock_server() as (server, clock):
+      def respond (line):
+        if line != 'PRIVMSG #test :two':
+          server.default_response (line)
+
+      server.respond = respond
+      status, output = self.run_main ('one\ntwo\nthree')
+      self.assertEqual (status, 1)
+      self.assertIn ('delivery may have occurred; not retrying', output)
+      self.assertEqual (self.bot.socket.socket.call_count, 1)
+      self.assertEqual ([line for line in server.sent if line.startswith ('PRIVMSG ')],
+                        ['PRIVMSG #test :one', 'PRIVMSG #test :two'])
+
+  def test_partial_message_write_does_not_retry (self):
+    with self.mock_server() as (server, clock):
+      original_send = server.sendall
+
+      def partial_write (data):
+        if data.startswith (b'PRIVMSG '):
+          server.data.extend (data[:12])
+          raise TimeoutError ('mock partial write')
+        original_send (data)
+
+      with mock.patch.object (server, 'sendall', side_effect = partial_write):
+        status, output = self.run_main ('hello')
+      self.assertEqual (status, 1)
+      self.assertIn ('delivery may have occurred; not retrying', output)
+      self.assertEqual (self.bot.socket.socket.call_count, 1)
+      self.assertEqual (server.data.count (b'PRIVMSG '), 1)
+
+  def test_disconnect_after_verified_delivery_is_success (self):
+    with self.mock_server() as (server, clock):
+      def respond (line):
+        server.default_response (line)
+        if line.startswith ('PRIVMSG '):
+          server.incoming.append (b'')
+
+      server.respond = respond
+      status, output = self.run_main ('hello')
+      self.assertEqual (status, 0)
+      self.assertIn ('delivered (echo verified)', output)
+      self.assertEqual (self.bot.socket.socket.call_count, 1)
+      self.assertTrue (server.closed)
+
+  def test_connection_failure_can_retry_before_sending (self):
+    with self.mock_server() as (server, clock):
+      with mock.patch.object (server, 'connect', side_effect = [ConnectionError ('mock failure'), None]):
+        status, output = self.run_main ('hello')
+      self.assertEqual (status, 0)
+      self.assertIn ('attempt 2/3', output)
+      self.assertEqual (self.bot.socket.socket.call_count, 2)
+      self.assertEqual (server.sent.count ('PRIVMSG #test :hello'), 1)
+
+  def test_connection_retries_are_bounded (self):
+    with self.mock_server() as (server, clock):
+      with mock.patch.object (server, 'connect', side_effect = ConnectionError ('mock failure')):
+        status, output = self.run_main ('hello')
+      self.assertEqual (status, 1)
+      self.assertEqual (self.bot.socket.socket.call_count, 3)
+      self.assertEqual (server.sent, [])
+
+  def test_ban_stops_without_retry (self):
+    with self.mock_server() as (server, clock):
+      server.queue (':mock 465 YYBOT :banned')
+      status, output = self.run_main ('hello')
+      self.assertEqual (status, 1)
+      self.assertIn ('server ban (465), not retrying', output)
+      self.assertEqual (self.bot.socket.socket.call_count, 1)
+      self.assertEqual (server.sent, [])
+
+  def test_verified_multiline_delivery_succeeds_once (self):
+    with self.mock_server() as (server, clock):
+      status, output = self.run_main ('one\ntwo')
+      self.assertEqual (status, 0)
+      self.assertEqual (self.bot.socket.socket.call_count, 1)
+      self.assertEqual (server.sent.count ('PRIVMSG #test :one'), 1)
+      self.assertEqual (server.sent.count ('PRIVMSG #test :two'), 1)
+
+  def test_list_only_accepts_empty_list_without_echo_capability (self):
+    with self.mock_server() as (server, clock):
+      def respond (line):
+        if line == 'CAP REQ :echo-message':
+          server.queue (':mock CAP * NAK :echo-message')
+        else:
+          server.default_response (line)
+
+      server.respond = respond
+      status, output = self.run_main ('-l', '-R', 'some/repository')
+      self.assertEqual (status, 0)
+      self.assertIn ('channel list received', output)
+      self.assertEqual (server.sent.count ('LIST'), 1)
+      self.assertFalse (any (line.startswith ('PRIVMSG ') for line in server.sent))
+
+  def test_list_failure_after_delivery_does_not_resend (self):
+    with self.mock_server() as (server, clock):
+      def respond (line):
+        if line != 'LIST':
+          server.default_response (line)
+
+      server.respond = respond
+      status, output = self.run_main ('-l', 'hello')
+      self.assertEqual (status, 1)
+      self.assertEqual (self.bot.socket.socket.call_count, 1)
+      self.assertEqual (server.sent.count ('PRIVMSG #test :hello'), 1)
+
+  def test_empty_message_fails_before_connect (self):
+    with self.mock_server() as (server, clock):
+      status, output = self.run_main ('\n')
+      self.assertEqual (status, 1)
+      self.assertIn ('no text to send', output)
+      self.bot.socket.socket.assert_not_called()
+
 
 if __name__ == "__main__":
   unittest.main()
