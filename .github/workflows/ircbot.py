@@ -22,6 +22,7 @@ last_message = 0.0
 replies = deque()
 Message = namedtuple ("Message", "prefix command params")
 have_echo_message = False # server confirms deliveries via echo-message cap
+delivery_started = False
 
 def colors (how):
   E = '\u001b['
@@ -71,6 +72,8 @@ def encode_line (text):
 
 def message_lines ():
   target = (args.j or args.J or args.n).split (' ')[0]
+  if not args.message:
+    return target, []
   budget = max_line_bytes - len (('PRIVMSG ' + target + ' :\r\n').encode ('utf8'))
   if budget < 4:
     raise Fatal ('IRC message target is too long')
@@ -96,6 +99,8 @@ def validate_commands ():
   if not args.n or any (c.isspace() for c in args.n) or args.n.startswith (':'):
     raise Fatal ('Invalid IRC nickname')
   target, lines = message_lines()
+  if args.message and not lines:
+    raise Fatal ('Message has no text to send')
   commands = ['USER ' + args.n + ' localhost ' + args.s + ' :' + args.n, 'NICK ' + args.n]
   if args.j:
     commands.append ('JOIN ' + args.j)
@@ -244,8 +249,9 @@ def expect (what):
 usage_help = '''
 Simple IRC bot for short messages.
 A password for authentication can be set via $IRCBOT_PASS.
-Connection failures and unverified messages are retried 3 times; a
-message only counts as delivered once the server echoed it back.
+Connection failures before sending are retried up to 3 times.
+Sending requires echo-message support; each message must be echoed back.
+Once sending starts, failures stop the bot without resending messages.
 Messages are throttled to Libera.Chat's rate limit of 1 per 2 seconds,
 see https://libera.chat/guides/faq#flood-exemptions-for-bots
 With -G, repository, user, branch, commit subject and URL are auto-filled
@@ -301,8 +307,8 @@ def register_connection ():
   ackline = waitfor (lambda r: r.command == 'CAP' and len (r.params) >= 3 and
     r.params[1] in ('ACK', 'NAK') and 'echo-message' in r.params[-1].split())
   have_echo_message = ackline.params[1] == 'ACK' and 'echo-message' in ackline.params[-1].split()
-  if not have_echo_message:
-    print ('IRC: server lacks echo-message, delivery cannot be verified', file = sys.stderr, flush = True)
+  if not have_echo_message and args.message:
+    raise Fatal ('server lacks echo-message; refusing unverified delivery')
   ircbot_pass = os.getenv ("IRCBOT_PASS")
   if ircbot_pass:
     sendline ("PASS " + ircbot_pass)
@@ -314,6 +320,7 @@ def register_connection ():
 
 def run_session ():
   # One IRC session: connect, register, join, send (and verify) the message
+  global delivery_started
   reset_session_state()
   validate_commands()
   connect (args.s, args.p)
@@ -338,18 +345,16 @@ def run_session ():
   target, lines = message_lines()
   for line in lines:
     throttle()
+    delivery_started = True
     sendline ("PRIVMSG " + target + " :" + line)
-    if have_echo_message:
-      waitfor (lambda r: r.command == 'PRIVMSG' and r.prefix.split ('!', 1)[0] == args.n and r.params == [target, line])
-    else:
-      readall()
+    waitfor (lambda r: r.command == 'PRIVMSG' and r.prefix.split ('!', 1)[0] == args.n and r.params == [target, line])
 
   if args.l:
     sendline ("LIST")
     expect ('323')
 
-  readall (500)
   try:
+    readall (500)
     sendline ("QUIT :Bye Bye")
     expect (['QUIT', 'ERROR'])
   except Exception:
@@ -357,8 +362,10 @@ def run_session ():
   close_socket()
 
 def main (sysargs):
-  global args, github_event_data
+  global args, github_event_data, delivery_started
   args = parse_args (sysargs)
+  github_event_data = None
+  delivery_started = False
 
   if args.G:
     # $GITHUB_EVENT_PATH holds the verbatim webhook payload of the triggering event;
@@ -415,8 +422,6 @@ def main (sysargs):
 
   if args.message and not args.quiet:
     print (format_msg (args, 1))
-  # Connection drops, missing replies and unverified messages are retried,
-  # the bot only exits successfully once delivery was confirmed by the server.
   orig_nick = args.n
   delivered = False
   attempts = 3
@@ -425,8 +430,8 @@ def main (sysargs):
       args.n = orig_nick
       run_session()
       delivered = True
-      verified = 'echo verified' if have_echo_message else 'unverified, no echo-message cap'
-      print (f'IRC: delivered ({verified}) on attempt {attempt}/{attempts}', file = sys.stderr, flush = True)
+      result = 'delivered (echo verified)' if delivery_started else 'channel list received'
+      print (f'IRC: {result} on attempt {attempt}/{attempts}', file = sys.stderr, flush = True)
       break
     except Fatal as e:
       print (f'IRC: fatal: {e}', file = sys.stderr, flush = True)
@@ -435,6 +440,9 @@ def main (sysargs):
     except Exception as e:
       print (f'IRC: attempt {attempt}/{attempts} failed: {e}', file = sys.stderr, flush = True)
       close_socket()
+      if delivery_started:
+        print ('IRC: delivery may have occurred; not retrying', file = sys.stderr, flush = True)
+        break
       if attempt < attempts:
         time.sleep (5 * 2 ** (attempt - 1)) # exponential backoff before reconnecting
   # Nonzero exit is reserved for notification failures; a failed build is
