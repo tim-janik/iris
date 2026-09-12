@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # This Source Code Form is licensed MPL-2.0: http://mozilla.org/MPL/2.0
 import sys, os, re, socket, select, time, unicodedata, json, ssl
+from collections import deque, namedtuple
 
 # https://datatracker.ietf.org/doc/html/rfc1459
 
@@ -11,14 +12,17 @@ nickname = "YYBOT"
 ircsock = None
 timeout = 150
 wait_timeout = 15000
+socket_timeout = 30
+max_line_bytes = 512
 github_event_data = None
 # Libera.Chat throttles message sending to 1 per 2 seconds, this applies
 # to bots too, see https://libera.chat/guides/faq#flood-exemptions-for-bots
 message_rate = 2.0
 last_message = 0.0
-captured_lines = [] # lines collected while capturing=True
-capturing = False
+replies = deque()
+Message = namedtuple ("Message", "prefix command params")
 have_echo_message = False # server confirms deliveries via echo-message cap
+delivery_started = False
 
 def colors (how):
   E = '\u001b['
@@ -43,24 +47,79 @@ def status_color (txt, c):
   return c.YELLOW
 
 def format_msg (args, how = 2):
-  msg = ' '.join (args.message)
+  msg = '\n'.join (clean_text (line) for line in ' '.join (args.message).split ('\n'))
   c = colors (how)
   if args.S:
-    msg = '[' + status_color (args.S, c) + args.S.upper() + c.RESET + '] ' + msg
+    msg = '[' + status_color (args.S, c) + clean_text (args.S).upper() + c.RESET + '] ' + msg
   if args.D:
-    msg = c.CYAN + args.D + c.RESET + ' ' + msg
+    msg = c.CYAN + clean_text (args.D) + c.RESET + ' ' + msg
   if args.U:
-    msg = c.ORANGE + args.U + c.RESET + ' ' + msg
+    msg = c.ORANGE + clean_text (args.U) + c.RESET + ' ' + msg
   if args.R:
-    msg = '[' + c.BLUE + args.R + c.RESET + '] ' + msg
+    msg = '[' + c.BLUE + clean_text (args.R) + c.RESET + '] ' + msg
   return msg
+
+def clean_text (text):
+  return ''.join (' ' if unicodedata.category (c) == 'Cc' else c for c in text)
+
+def encode_line (text):
+  if any (c in text for c in '\r\n\0'):
+    raise Fatal ('IRC command contains a line break or NUL')
+  data = (text + '\r\n').encode ('utf8')
+  if len (data) > max_line_bytes:
+    raise Fatal ('IRC command exceeds the byte limit')
+  return data
+
+def message_lines ():
+  target = (args.j or args.J or args.n).split (' ')[0]
+  if not args.message:
+    return target, []
+  budget = max_line_bytes - len (('PRIVMSG ' + target + ' :\r\n').encode ('utf8'))
+  if budget < 4:
+    raise Fatal ('IRC message target is too long')
+  lines = []
+  for line in re.split ('\n ?', format_msg (args)):
+    chunk = ''
+    size = 0
+    for char in line:
+      width = len (char.encode ('utf8'))
+      if size + width > budget:
+        lines.append (chunk)
+        chunk, size = '', 0
+      chunk += char
+      size += width
+    if chunk:
+      lines.append (chunk)
+  return target, lines
+
+def validate_commands ():
+  for value in (args.n, args.s, args.j, args.J):
+    if clean_text (value) != value:
+      raise Fatal ('IRC connection arguments contain control characters')
+  if not args.n or any (c.isspace() for c in args.n) or args.n.startswith (':'):
+    raise Fatal ('Invalid IRC nickname')
+  target, lines = message_lines()
+  if args.message and not lines:
+    raise Fatal ('Message has no text to send')
+  commands = ['USER ' + args.n + ' localhost ' + args.s + ' :' + args.n, 'NICK ' + args.n]
+  if args.j:
+    commands.append ('JOIN ' + args.j)
+  if os.getenv ('IRCBOT_PASS'):
+    commands.append ('PASS ' + os.environ['IRCBOT_PASS'])
+  for command in commands + ['PRIVMSG ' + target + ' :' + line for line in lines]:
+    encode_line (command)
 
 def sendline (text):
   global args
+  data = encode_line (text)
   if not args.quiet:
-    print (text, flush = True)
-  msg = text + "\r\n"
-  ircsock.send (msg.encode ('utf8'))
+    print ("PASS <redacted>" if text.split (" ", 1)[0].upper() == "PASS" else text, flush = True)
+  previous_timeout = ircsock.gettimeout()
+  try:
+    ircsock.settimeout (socket_timeout)
+    ircsock.sendall (data)
+  finally:
+    ircsock.settimeout (previous_timeout)
 
 def close_socket ():
   global ircsock
@@ -72,20 +131,16 @@ def close_socket ():
     ircsock = None
 
 def reset_session_state ():
-  # fresh state per attempt, so retries aren't confused by leftover data
-  global readall_buffer, expecting_commands, check_cmds, capturing
+  global readall_buffer, have_echo_message
   close_socket()
   readall_buffer = b''
-  expecting_commands = []
-  check_cmds = []
-  seen_cmds.clear()
-  captured_lines.clear()
-  capturing = False
+  replies.clear()
+  have_echo_message = False
 
 def connect (server, port):
   global ircsock
   ircsock = socket.socket (socket.AF_INET, socket.SOCK_STREAM)
-  ircsock.settimeout (30) # connect and TLS handshake must not hang CI forever
+  ircsock.settimeout (socket_timeout)
   if args.tls:
     ctx = ssl.create_default_context()
     ircsock = ctx.wrap_socket (ircsock, server_hostname = server)
@@ -101,57 +156,46 @@ def canread (milliseconds):
 readall_buffer = b'' # unterminated start of next line
 def readall (milliseconds = timeout):
   global readall_buffer
-  gotlines = False
-  while canread (milliseconds):
-    milliseconds = 0
+  if not canread (milliseconds):
+    return False
+  previous_timeout = ircsock.gettimeout()
+  try:
+    ircsock.settimeout (max (0.001, min (socket_timeout, milliseconds * 0.001)))
     buf = ircsock.recv (128 * 1024)
-    if len (buf) == 0:
-      raise Exception ('SOCKET CLOSED: connection lost') # triggers session retry
-    gotlines = True
-    readall_buffer += buf
-    if readall_buffer.find (b'\n') >= 0:
-      lines, readall_buffer = readall_buffer.rsplit (b'\n', 1)
-      lines = lines.decode ('utf8', 'replace')
-      for l in lines.split ('\n'):
-        if l:
-          gotline (l.rstrip())
-  return gotlines
+  finally:
+    ircsock.settimeout (previous_timeout)
+  if not buf:
+    raise ConnectionError ('SOCKET CLOSED: connection lost')
+  readall_buffer += buf
+  if b'\n' in readall_buffer:
+    lines, readall_buffer = readall_buffer.rsplit (b'\n', 1)
+    for line in lines.decode ('utf8', 'replace').split ('\n'):
+      if line:
+        gotline (line.removesuffix ('\r'))
+  return True
 
 class Fatal (Exception):
-  pass # non-retryable session failure (e.g. server ban)
+  pass
 
 def waitfor (pred, milliseconds = wait_timeout):
-  # Read incoming lines until pred (line) matches, returns the matched line
-  global capturing
-  endtime = time.time() + milliseconds * 0.001
-  capturing = True
-  captured_lines.clear()
-  try:
-    while True:
-      try:
-        readall (100)
-      except Exception:
-        # socket closed: final check of captured lines before propagating
-        for l in captured_lines:
-          if pred (l):
-            return l
-        raise
-      for l in captured_lines:
-        if pred (l):
-          return l
-      captured_lines.clear()
-      if time.time() >= endtime:
-        raise Exception ('TIMEOUT: no matching reply within ' + str (milliseconds) + 'ms')
-  finally:
-    capturing = False
+  endtime = time.monotonic() + milliseconds * 0.001
+  while True:
+    while replies:
+      reply = replies.popleft()
+      if pred (reply):
+        return reply
+    remaining = endtime - time.monotonic()
+    if remaining <= 0:
+      raise TimeoutError ('TIMEOUT: no matching reply within ' + str (milliseconds) + 'ms')
+    readall (min (remaining * 1000, 100))
 
 def throttle ():
   # Sleep long enough to respect Libera.Chat's message rate limit
   global last_message
-  elapsed = time.time() - last_message
+  elapsed = time.monotonic() - last_message
   if elapsed < message_rate:
     time.sleep (message_rate - elapsed)
-  last_message = time.time()
+  last_message = time.monotonic()
 
 def is_printable(c):
   # Catch control sequences like:
@@ -160,65 +204,54 @@ def is_printable(c):
   # c287 → U+0087 (C0 control character: "Cancel Character").
   return unicodedata.category(c)[0] != 'C'
 
-def gotline (msg):
-  global args
-  if capturing:
-    captured_lines.append (msg)
-  if not args.quiet:
-    filtered_msg = ''.join (c for c in msg if is_printable (c))
-    print (filtered_msg, flush = True)
-  cmdargs = re.split (' +', msg)
-  if cmdargs:
-    prefix = ''
-    if cmdargs[0] and cmdargs[0][0] == ':':
-      prefix = cmdargs[0]
-      cmdargs = cmdargs[1:]
-      if not cmdargs:
-        return
-    gotcmd (prefix, cmdargs[0], cmdargs[1:])
+def parse_line (line):
+  if line.startswith ('@'):
+    line = line.partition (' ')[2]
+  prefix = ''
+  if line.startswith (':'):
+    prefix, _, line = line[1:].partition (' ')
+  middle, separator, trailing = line.partition (' :')
+  words = middle.split()
+  if not words:
+    return Message (prefix, '', [])
+  params = words[1:] + ([trailing] if separator else [])
+  return Message (prefix, words[0].upper(), params)
 
-expecting_commands = []
-check_cmds = []
-seen_cmds = [] # all commands seen so far, includes cmds seen during waitfor()
-def gotcmd (prefix, cmd, args):
-  global expecting_commands, check_cmds
-  seen_cmds.append (cmd)
-  if check_cmds:
-    try: check_cmds.remove (cmd)
-    except: pass
-  if cmd in expecting_commands:
-    expecting_commands = []
-  if cmd == 'PING':
-    return sendline ('PONG ' + ' '.join (args))
+def gotline (line):
+  if not args.quiet:
+    print (''.join (c for c in line if is_printable (c)), flush = True)
+  reply = parse_line (line)
+  if reply.command == '465':
+    raise Fatal ('server ban (465), not retrying')
+  if reply.command == 'PING':
+    if reply.params:
+      sendline ('PONG ' + ' '.join (reply.params[:-1] + [':' + reply.params[-1]]))
+  elif reply.command:
+    replies.append (reply)
 
 def register_nick ():
-  # Wait for registration (001), retry with a suffixed nick on 433 (in use)
-  global args
   for i in range (3):
-    reply = waitfor (lambda l: re.search (r'\b(001|433|465)\b', l))
-    if re.search (r'\b001\b', reply):
+    reply = waitfor (lambda r:
+      (r.command == '001' and bool (r.params)) or
+      (r.command == '433' and len (r.params) >= 2 and r.params[1] == args.n))
+    if reply.command == '001':
+      args.n = reply.params[0]
       return
-    if re.search (r'\b465\b', reply):
-      raise Fatal ('server ban (465), not retrying: ' + reply)
-    args.n += '_' # 433: nickname is already in use
-    sendline ("NICK " + args.n)
+    if i < 2:
+      args.n += '_'
+      sendline ("NICK " + args.n)
   raise Exception ('NICK: nickname already in use, all retries failed')
 
-def expect (what = []):
-  global expecting_commands
-  expecting_commands = what if isinstance (what, (list, tuple)) else [ what ]
-  for c in seen_cmds: # handle commands seen during earlier waitfor() calls
-    if c in expecting_commands:
-      expecting_commands = []
-  while expecting_commands and readall (wait_timeout): pass
-  if expecting_commands:
-    raise (Exception ('MISSING REPLY: ' + ' | '.join (expecting_commands)))
+def expect (what):
+  commands = what if isinstance (what, (list, tuple)) else [what]
+  return waitfor (lambda r: r.command in commands)
 
 usage_help = '''
 Simple IRC bot for short messages.
 A password for authentication can be set via $IRCBOT_PASS.
-Connection failures and unverified messages are retried 3 times; a
-message only counts as delivered once the server echoed it back.
+Connection failures before sending are retried up to 3 times.
+Sending requires echo-message support; each message must be echoed back.
+Once sending starts, failures stop the bot without resending messages.
 Messages are throttled to Libera.Chat's rate limit of 1 per 2 seconds,
 see https://libera.chat/guides/faq#flood-exemptions-for-bots
 With -G, repository, user, branch, commit subject and URL are auto-filled
@@ -264,63 +297,6 @@ def parse_args (sysargs):
   #print ('ARGS:', repr (args), flush = True)
   return args
 
-args = parse_args (sys.argv[1:])
-
-if args.G:
-  # $GITHUB_EVENT_PATH holds the verbatim webhook payload of the triggering event;
-  # the field layout of each event type is documented at
-  #   https://docs.github.com/en/webhooks/webhook-events-and-payloads
-  # with machine readable schemas at
-  #   https://github.com/octokit/webhooks/tree/main/payload-schemas/api.github.com
-  # note: payloads drift from these schemas in both directions (e.g. head_commit
-  # can be null, sender.user_view_type is payload-only), read all fields defensively
-  event_path = os.getenv ('GITHUB_EVENT_PATH')
-  if event_path and os.path.exists (event_path):
-    with open (event_path, 'r') as f:
-      github_event_data = json.load (f)
-
-# Derive announcement fields from the event payload; which events reach the bot
-# is decided by the calling workflow, the bot handles all payload shapes.
-if github_event_data:
-  ev = github_event_data
-  R = (ev.get ('repository') or {}).get ('full_name', '')
-  args.R = R if R else args.R
-  U = (ev.get ('pusher') or {}).get ('name', '')
-  args.U = U if U else args.U
-  ref = ev.get ('ref') or ''
-  if ref:
-    args.D = re.sub (r'^refs/(heads|tags)/', '', ref) # branch or tag name
-  head = ev.get ('head_commit') or {} # schema allows null
-  pr = ev.get ('pull_request') or {} # pull_request payloads: no ref/pusher/head_commit
-  subject = (head.get ('message', '').splitlines() or [ '' ])[0] # commit subject line
-  if pr and not subject: # pull_request payload: announce "action: title"
-    if pr.get ('number'):
-      args.D = '#' + str (pr['number'])
-    args.U = args.U or (ev.get ('sender') or {}).get ('login', '')
-    subject = pr.get ('title', '')
-    if subject and ev.get ('action'):
-      subject = ev['action'] + ': ' + subject
-  url = head.get ('url') or pr.get ('html_url') or ''
-  if not args.message and subject: # default message: commit subject or PR title
-    args.message = [ subject ]
-  if url and args.message:
-    args.message += [ '-', url ]
-  # overall job status: IRCBOT_JOBS passes the workflow's needs.*.result values
-  # joined by spaces; anything but success|skipped is announced as FAILURE, the
-  # run conclusion itself is handled by GitHub
-  needs_results = os.getenv ('IRCBOT_JOBS', '').split()
-  failed = [ r for r in needs_results if r not in ( 'success', 'skipped' ) ]
-  if not args.S and needs_results:
-    args.S = 'FAILURE' if failed else 'SUCCESS'
-  print ('EVENT:', args.R or '-', args.U or '-', args.D or '-', url or '-', '| jobs:',
-         ' '.join (needs_results) or '-', file = sys.stderr)
-
-# Never open a remote connection without a message to deliver
-if not args.message and not args.l:
-  argparser.error ('a message is required (or -l to list channels)')
-
-if args.message and not args.quiet:
-  print (format_msg (args, 1))
 def register_connection ():
   # CAP negotiation for echo-message (delivery verification), then USER/NICK
   global have_echo_message
@@ -328,10 +304,11 @@ def register_connection ():
   # how deliveries are verified without channel operator privileges
   sendline ("CAP LS 302") # IRCv3: CAP negotiation starts with CAP LS
   sendline ("CAP REQ :echo-message")
-  ackline = waitfor (lambda l: re.search (r' CAP .* (ACK|NAK)', l))
-  have_echo_message = not re.search (r' CAP .* NAK', ackline)
-  if not have_echo_message:
-    print ('IRC: server lacks echo-message, delivery cannot be verified', file = sys.stderr, flush = True)
+  ackline = waitfor (lambda r: r.command == 'CAP' and len (r.params) >= 3 and
+    r.params[1] in ('ACK', 'NAK') and 'echo-message' in r.params[-1].split())
+  have_echo_message = ackline.params[1] == 'ACK' and 'echo-message' in ackline.params[-1].split()
+  if not have_echo_message and args.message:
+    raise Fatal ('server lacks echo-message; refusing unverified delivery')
   ircbot_pass = os.getenv ("IRCBOT_PASS")
   if ircbot_pass:
     sendline ("PASS " + ircbot_pass)
@@ -343,87 +320,136 @@ def register_connection ():
 
 def run_session ():
   # One IRC session: connect, register, join, send (and verify) the message
+  global delivery_started
   reset_session_state()
+  validate_commands()
   connect (args.s, args.p)
   readall (500)
   register_connection()
 
   if args.ping:
     sendline ("PING :pleasegetbacktome")
-    expect ('PONG')
+    waitfor (lambda r: r.command == 'PONG' and r.params and r.params[-1] == 'pleasegetbacktome')
 
   if args.j:
     sendline ("JOIN " + args.j)
-    # wait for the join echo or a rejection numeric (403, 471, 473, 474, 475)
-    reply = waitfor (lambda l: re.search (r'\b(JOIN|403|471|473|474|475)\b', l))
-    if re.search (r'\bJOIN\b', reply):
-      pass # joined, join echo received
-    elif re.search (r'\b471\b', reply):
-      raise Exception ('JOIN rejected, channel full (471), retrying: ' + reply)
-    else:
-      raise Fatal ('JOIN rejected: ' + reply)
+    target = args.j.split (' ')[0]
+    reply = waitfor (lambda r:
+      (r.command == 'JOIN' and r.prefix.split ('!', 1)[0] == args.n and r.params == [target]) or
+      (r.command in ('403', '471', '473', '474', '475') and len (r.params) >= 2 and r.params[1] == target))
+    if reply.command == '471':
+      raise Exception ('JOIN rejected, channel full (471)')
+    if reply.command != 'JOIN':
+      raise Fatal ('JOIN rejected: ' + reply.command)
 
-  msg = format_msg (args)
-  for line in re.split ('\n ?', msg):
-    channel = (args.j or args.J or args.n).split (' ')[0] # drop JOIN key part
-    if line:
-      throttle() # Libera.Chat allows 1 message per 2 seconds
-      sendline ("PRIVMSG " + channel + " :" + line)
-      if have_echo_message:
-        # delivery is only confirmed once the server echoes the message back
-        waitfor (lambda l: re.search (r' PRIVMSG ' + re.escape (channel) + r' :' + re.escape (line[:64]), l), 15000)
-      else:
-        readall()
+  target, lines = message_lines()
+  for line in lines:
+    throttle()
+    delivery_started = True
+    sendline ("PRIVMSG " + target + " :" + line)
+    waitfor (lambda r: r.command == 'PRIVMSG' and r.prefix.split ('!', 1)[0] == args.n and r.params == [target, line])
 
   if args.l:
-    global check_cmds
     sendline ("LIST")
-    check_cmds = [ '322' ]
     expect ('323')
-    if check_cmds:
-      # empty list, retry after 60seconds
-      time.sleep (30)
-      check_cmds = [ 'PING' ]
-      readall()
-      if check_cmds:
-        sendline ("PING :pleasegetbacktome")
-        expect ('PONG')
-      time.sleep (30)
-      readall()
-      sendline ("LIST")
-      expect ('323')
 
-  readall (500)
   try:
+    readall (500)
     sendline ("QUIT :Bye Bye")
     expect (['QUIT', 'ERROR'])
   except Exception:
     pass
   close_socket()
 
-# Connection drops, missing replies and unverified messages are retried,
-# the bot only exits successfully once delivery was confirmed by the server.
-orig_nick = args.n
-delivered = False
-attempts = 3
-for attempt in range (1, attempts + 1):
-  try:
-    args.n = orig_nick
-    run_session()
-    delivered = True
-    verified = 'echo verified' if have_echo_message else 'unverified, no echo-message cap'
-    print (f'IRC: delivered ({verified}) on attempt {attempt}/{attempts}', file = sys.stderr, flush = True)
-    break
-  except Fatal as e:
-    print (f'IRC: fatal: {e}', file = sys.stderr, flush = True)
-    close_socket()
-    break # don't retry a server ban
-  except Exception as e:
-    print (f'IRC: attempt {attempt}/{attempts} failed: {e}', file = sys.stderr, flush = True)
-    close_socket()
-    if attempt < attempts:
-      time.sleep (5 * 2 ** (attempt - 1)) # exponential backoff before reconnecting
-# Nonzero exit is reserved for notification failures; a failed build is
-# communicated via the [FAILURE] tag and GitHub's own run conclusion
-if not delivered:
-  sys.exit (1)
+def main (sysargs):
+  global args, github_event_data, delivery_started
+  args = parse_args (sysargs)
+  github_event_data = None
+  delivery_started = False
+
+  if args.G:
+    # $GITHUB_EVENT_PATH holds the verbatim webhook payload of the triggering event;
+    # the field layout of each event type is documented at
+    #   https://docs.github.com/en/webhooks/webhook-events-and-payloads
+    # with machine readable schemas at
+    #   https://github.com/octokit/webhooks/tree/main/payload-schemas/api.github.com
+    # note: payloads drift from these schemas in both directions (e.g. head_commit
+    # can be null, sender.user_view_type is payload-only), read all fields defensively
+    event_path = os.getenv ('GITHUB_EVENT_PATH')
+    if event_path and os.path.exists (event_path):
+      with open (event_path, 'r') as f:
+        github_event_data = json.load (f)
+
+  # Derive announcement fields from the event payload; which events reach the bot
+  # is decided by the calling workflow, the bot handles all payload shapes.
+  if github_event_data:
+    ev = github_event_data
+    R = (ev.get ('repository') or {}).get ('full_name', '')
+    args.R = R if R else args.R
+    U = (ev.get ('pusher') or {}).get ('name', '')
+    args.U = U if U else args.U
+    ref = ev.get ('ref') or ''
+    if ref:
+      args.D = re.sub (r'^refs/(heads|tags)/', '', ref) # branch or tag name
+    head = ev.get ('head_commit') or {} # schema allows null
+    pr = ev.get ('pull_request') or {} # pull_request payloads: no ref/pusher/head_commit
+    subject = (head.get ('message', '').splitlines() or [ '' ])[0] # commit subject line
+    if pr and not subject: # pull_request payload: announce "action: title"
+      if pr.get ('number'):
+        args.D = '#' + str (pr['number'])
+      args.U = args.U or (ev.get ('sender') or {}).get ('login', '')
+      subject = pr.get ('title', '')
+      if subject and ev.get ('action'):
+        subject = ev['action'] + ': ' + subject
+    url = head.get ('url') or pr.get ('html_url') or ''
+    if not args.message and subject: # default message: commit subject or PR title
+      args.message = [ subject ]
+    if url and args.message:
+      args.message += [ '-', url ]
+    # overall job status: IRCBOT_JOBS passes the workflow's needs.*.result values
+    # joined by spaces; anything but success|skipped is announced as FAILURE, the
+    # run conclusion itself is handled by GitHub
+    needs_results = os.getenv ('IRCBOT_JOBS', '').split()
+    failed = [ r for r in needs_results if r not in ( 'success', 'skipped' ) ]
+    if not args.S and needs_results:
+      args.S = 'FAILURE' if failed else 'SUCCESS'
+    print ('EVENT:', args.R or '-', args.U or '-', args.D or '-', url or '-', '| jobs:',
+           ' '.join (needs_results) or '-', file = sys.stderr)
+
+  # Never open a remote connection without a message to deliver
+  if not args.message and not args.l:
+    argparser.error ('a message is required (or -l to list channels)')
+
+  if args.message and not args.quiet:
+    print (format_msg (args, 1))
+  orig_nick = args.n
+  delivered = False
+  attempts = 3
+  for attempt in range (1, attempts + 1):
+    try:
+      args.n = orig_nick
+      run_session()
+      delivered = True
+      result = 'delivered (echo verified)' if delivery_started else 'channel list received'
+      print (f'IRC: {result} on attempt {attempt}/{attempts}', file = sys.stderr, flush = True)
+      break
+    except Fatal as e:
+      print (f'IRC: fatal: {e}', file = sys.stderr, flush = True)
+      close_socket()
+      break # don't retry a server ban
+    except Exception as e:
+      print (f'IRC: attempt {attempt}/{attempts} failed: {e}', file = sys.stderr, flush = True)
+      close_socket()
+      if delivery_started:
+        print ('IRC: delivery may have occurred; not retrying', file = sys.stderr, flush = True)
+        break
+      if attempt < attempts:
+        time.sleep (5 * 2 ** (attempt - 1)) # exponential backoff before reconnecting
+  # Nonzero exit is reserved for notification failures; a failed build is
+  # communicated via the [FAILURE] tag and GitHub's own run conclusion
+  if not delivered:
+    sys.exit (1)
+
+
+if __name__ == "__main__":
+  main (sys.argv[1:])
