@@ -1,6 +1,23 @@
 // This Source Code Form is licensed MPL-2.0: http://mozilla.org/MPL/2.0
 //
 // Package globstar provides glob pattern matching with ** (recursive) support.
+//
+// Patterns use forward-slash separated segments. Each segment is matched
+// against the corresponding path segment using filepath.Match semantics
+// (*, ?, [abc]). The special segment "**" matches zero or more path segments,
+// enabling recursive directory matching.
+//
+// The package follows the regexp-style API: compile once (Compile), match many
+// times (Pattern.Match). Convenience functions (Match, MatchAny) are provided
+// for one-off use.
+//
+// Example:
+//
+//	p, _ := globstar.Compile("20*/**/*.md")
+//	p.Match("2025/posts/hello.md") // true
+//
+//	globstar.Match("content/**/*.md", "content/foo.md") // true
+//	globstar.MatchAny([]string{"*.md", "*.adoc"}, "readme.md") // true
 package globstar
 
 import (
@@ -15,8 +32,13 @@ type Pattern struct {
 	parts []string // pre-split pattern segments
 }
 
-// Compile parses a pattern and rejects malformed segments.
+// Compile parses a glob pattern string into a Pattern. Returns an error for
+// malformed patterns (e.g. unmatched brackets in a segment).
+//
+// This is the analogue of regexp.Compile. Use MustCompile when the pattern
+// is known to be valid at compile time.
 func Compile(pattern string) (*Pattern, error) {
+	pattern = normalize(pattern)
 	parts := strings.Split(pattern, "/")
 	for _, p := range parts {
 		if p == "**" {
@@ -33,7 +55,7 @@ func Compile(pattern string) (*Pattern, error) {
 
 // Match reports whether path matches the compiled pattern.
 func (p *Pattern) Match(path string) bool {
-	segs := strings.Split(path, "/")
+	segs := strings.Split(normalize(path), "/")
 	return matchParts(p.parts, segs)
 }
 
@@ -66,9 +88,13 @@ func (p *Pattern) String() string {
 	return strings.Join(p.parts, "/")
 }
 
+// ---------------------------------------------------------------------------
+// Convenience functions (no pre-compilation; for one-off use)
+// ---------------------------------------------------------------------------
+
 // IsHidden returns true if any path segment starts with '.'.
 func IsHidden(path string) bool {
-	for _, seg := range strings.Split(path, "/") {
+	for _, seg := range strings.Split(normalize(path), "/") {
 		if len(seg) > 0 && seg[0] == '.' {
 			return true
 		}
@@ -192,4 +218,10 @@ func (f *Filter) ShouldTraverse(path string) bool {
 		return true
 	}
 	return f.Exclude == nil || !f.Exclude.Match(path)
+}
+
+func normalize(value string) string {
+	value = filepath.ToSlash(value)
+	value = strings.TrimPrefix(value, "./")
+	return strings.Trim(value, "/")
 }

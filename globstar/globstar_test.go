@@ -293,16 +293,6 @@ func TestFilterHiddenWithExplicitInclude(t *testing.T) {
 	}
 }
 
-func TestFilterExcludeOverridesInclude(t *testing.T) {
-	f, _ := NewFilter([]string{"**"}, []string{"secret/*"})
-	if f.ShouldInclude("secret/password.txt") {
-		t.Error("exclude should override include")
-	}
-	if !f.ShouldInclude("public/hello.txt") {
-		t.Error("non-excluded file should pass")
-	}
-}
-
 func TestFilterShouldTraverseNilMatchesHiddenPolicy(t *testing.T) {
 	var filter *Filter
 	if filter.ShouldTraverse(".hidden") {
@@ -320,6 +310,26 @@ func TestFilterShouldIncludeNilMatchesHiddenPolicy(t *testing.T) {
 	}
 	if !filter.ShouldInclude("visible") {
 		t.Error("nil filter should include visible files")
+	}
+}
+
+func TestFilterExcludeOverridesInclude(t *testing.T) {
+	f, _ := NewFilter([]string{"**"}, []string{"secret/*"})
+	if f.ShouldInclude("secret/password.txt") {
+		t.Error("exclude should override include")
+	}
+	if !f.ShouldInclude("public/hello.txt") {
+		t.Error("non-excluded file should pass")
+	}
+}
+
+func TestPatternMatchesBackslashName(t *testing.T) {
+	pattern, err := Compile("*.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pattern.Match(`a\b.md`) {
+		t.Error("pattern did not match a POSIX filename containing a backslash")
 	}
 }
 
