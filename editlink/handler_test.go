@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tim-janik/iris/sourcepath"
 )
 
 func TestEditActionRequiresPostAndToken(t *testing.T) {
@@ -49,5 +51,32 @@ func TestInjectedEditLinksUsePost(t *testing.T) {
 	}
 	if !strings.Contains(html.UnescapeString(htmlText), "method:'POST'") {
 		t.Fatalf("edit link does not use POST: %s", htmlText)
+	}
+}
+
+func TestEditActionUsesServedSource(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"index.html", "index.md", "page.md"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resolver, err := sourcepath.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	})
+	handler := Handler(Config{Cmd: "true"}, next, resolver)
+	for target, want := range map[string]int{
+		"/?edl=1":     http.StatusMethodNotAllowed,
+		"/page?edl=1": http.StatusOK,
+	} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, target, nil))
+		if rec.Code != want {
+			t.Errorf("POST %s = %d, want %d", target, rec.Code, want)
+		}
 	}
 }

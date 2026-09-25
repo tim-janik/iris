@@ -65,3 +65,14 @@ iris init
 iris ssg ./content ./public
 iris serve /home/user/
 ```
+
+SSG accepts output inside the input tree, for example `iris ssg . ./site`.
+It skips the output directory and its staging and backup directories during input scanning.
+Generation finishes in a staging directory before installation starts.
+By default, installation renames directories, so the output parent must be writable
+and the output itself must not be a mount point. The two renames are not an atomic swap.
+
+With `-C=false`, SSG keeps existing files and copies the completed build into the
+output directory in place. This also supports writable outputs under a read-only
+parent and mount-point outputs. Generation failures preserve the old output;
+an error during the final copy can leave partially updated files.

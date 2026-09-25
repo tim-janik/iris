@@ -95,6 +95,11 @@ func walkFiles(inputDir, outputDir string, filter *globstar.Filter) ([]string, e
 			return nil
 		}
 		if d.IsDir() {
+			prefix := "." + filepath.Base(outputDir)
+			if filepath.Dir(path) == filepath.Dir(outputDir) &&
+				(strings.HasPrefix(d.Name(), prefix+".tmp-") || strings.HasPrefix(d.Name(), prefix+".old-")) {
+				return filepath.SkipDir
+			}
 			if !filter.ShouldTraverse(rel) {
 				return filepath.SkipDir
 			}
