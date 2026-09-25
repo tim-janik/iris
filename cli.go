@@ -233,11 +233,7 @@ func serveMain() {
 	}
 }
 
-// recordServe walks root and records the response body of every URL that
-// iris serve answers, into outDir (cleared first). Paths mirror the served
-// URLs verbatim: /2005/hello (converted from 2005/hello.md) is written as
-// 2005/hello. Directories and non-passthrough files yield 404 in serve
-// mode and are not recorded. The outDir itself is excluded from the walk.
+// recordServe records file routes and directory indexes under outDir.
 func recordServe(handler http.Handler, root, outDir string) error {
 	rootAbs, outAbs, err := validate_output_paths(root, outDir)
 	if err != nil {
@@ -260,7 +256,6 @@ func recordServe(handler http.Handler, root, outDir string) error {
 				(abs == outAbs || strings.HasPrefix(abs, outAbs+string(os.PathSeparator))) {
 				return filepath.SkipDir
 			}
-			return nil
 		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
@@ -270,6 +265,11 @@ func recordServe(handler http.Handler, root, outDir string) error {
 		ext := strings.ToLower(filepath.Ext(slash))
 		var urlPath string
 		switch {
+		case d.IsDir():
+			urlPath = "/"
+			if rel != "." {
+				urlPath += slash + "/"
+			}
 		case ext == ".md" || ext == ".adoc":
 			urlPath = "/" + strings.TrimSuffix(slash, ext)
 		case mimetype.IsPassthrough(ext):
@@ -277,11 +277,14 @@ func recordServe(handler http.Handler, root, outDir string) error {
 		default:
 			return nil // serve answers 404 for these
 		}
-		if prev, ok := seen[urlPath]; ok {
-			log.Printf("[skip] %s: same URL already served from %s", urlPath, prev)
+		recordPath := strings.TrimPrefix(urlPath, "/")
+		if d.IsDir() {
+			recordPath += "index.html"
+		}
+		if prev, ok := seen[recordPath]; ok {
+			log.Printf("[skip] %s: same output already recorded from %s", urlPath, prev)
 			return nil
 		}
-		seen[urlPath] = rel
 
 		req := httptest.NewRequest(http.MethodGet, (&url.URL{Path: urlPath}).String(), nil)
 		rec := httptest.NewRecorder()
@@ -293,7 +296,7 @@ func recordServe(handler http.Handler, root, outDir string) error {
 			log.Printf("[%d] %s (not recorded)", rec.Code, urlPath)
 			return nil
 		}
-		recordPath := strings.TrimPrefix(urlPath, "/")
+		seen[recordPath] = rel
 		full := filepath.Join(outDir, filepath.FromSlash(recordPath))
 		recordRel, err := filepath.Rel(outDir, full)
 		if err != nil || !filepath.IsLocal(recordRel) || recordRel == "." {

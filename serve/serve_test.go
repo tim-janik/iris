@@ -494,12 +494,215 @@ func TestHandlerRejectsOutsideSymlinksAndEncodedTraversal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, target := range []string{"/link.txt", "/%2e%2e/outside.txt"} {
-		req := httptest.NewRequest(http.MethodGet, "http://example.com"+target, nil)
+	for _, test := range []struct {
+		target string
+		want   int
+	}{
+		{target: "/link.txt", want: http.StatusNotFound},
+		{target: "/%2e%2e/outside.txt", want: http.StatusNotFound},
+		{target: "/missing.txt", want: http.StatusNotFound},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "http://example.com"+test.target, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != test.want {
+			t.Errorf("%s status = %d, want %d, body = %s", test.target, rec.Code, test.want, rec.Body)
+		}
+	}
+}
+
+func TestServeRejectsTraversal(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(secret, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	handler, err := (&Server{Root: root}).Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/..%2f" + filepath.Base(outside) + "/secret.txt", "/%2e%2e/secret.txt", "/.git/config"} {
+		req := httptest.NewRequest(http.MethodGet, "http://example.test"+path, nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusNotFound {
-			t.Errorf("%s status = %d, body = %s", target, rec.Code, rec.Body)
+			t.Errorf("request %q status = %d, body %q", path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestServeStaticAssets(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]int{
+		"image.png":    http.StatusOK,
+		"photo.jpeg":   http.StatusOK,
+		"image.svg":    http.StatusOK,
+		"image.webp":   http.StatusOK,
+		"site.css":     http.StatusOK,
+		"app.js":       http.StatusOK,
+		"font.woff2":   http.StatusOK,
+		"data.json":    http.StatusOK,
+		"feed.xml":     http.StatusOK,
+		"download.zip": http.StatusOK,
+		"app.wasm":     http.StatusOK,
+		"message.eml":  http.StatusOK,
+		"build.log":    http.StatusOK,
+		"unknown.xyz":  http.StatusNotFound,
+	}
+	for name := range files {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handler, err := (&Server{Root: root}).Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range files {
+		req := httptest.NewRequest(http.MethodGet, "/"+name, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("GET /%s = %d, want %d", name, rec.Code, want)
+		}
+		if want == http.StatusOK && rec.Body.String() != name {
+			t.Errorf("GET /%s body = %q", name, rec.Body.String())
+		}
+	}
+}
+
+func TestServeSourceAliasDoesNotRedirect(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "page.md"), []byte("# Alias content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "page.md"), filepath.Join(root, "alias")); err != nil {
+		t.Fatal(err)
+	}
+	handler, err := (&Server{Root: root}).Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/alias", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Alias content") {
+		t.Fatalf("alias response = %d %q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestServeSourceRedirectPreservesQuery(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "page.md"), []byte("page"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	handler, err := (&Server{Root: root}).Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/page.md?view=full", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/page?view=full" {
+		t.Fatalf("redirect = %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	req = httptest.NewRequest(http.MethodGet, "/page.md?noredirect", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || rec.Body.String() != "page" {
+		t.Fatalf("noredirect = %d %q", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/markdown; charset=utf-8" {
+		t.Fatalf("noredirect content type = %q", got)
+	}
+}
+
+func TestSourceRedirectPreservesDocument(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"index.html": "static index",
+		"index.md":   "# Markdown index",
+		"foo.txt":    "static text",
+		"foo.txt.md": "# Markdown text",
+		"Readme.MD":  "# Uppercase markdown",
+		"guide.ADOC": "= Uppercase asciidoc\n\nBody",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handler, err := (&Server{Root: root}).Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for target, want := range map[string]string{
+		"/index.md":   "Markdown index",
+		"/foo.txt.md": "Markdown text",
+		"/Readme.MD":  "Uppercase markdown",
+		"/guide.ADOC": "Uppercase asciidoc",
+	} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("GET %s = %d %q", target, rec.Code, rec.Body.String())
+		}
+		rec = httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target+"?noredirect", nil))
+		if rec.Code != http.StatusOK || rec.Body.String() != files[target[1:]] {
+			t.Errorf("raw GET %s = %d %q", target, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestRedirectsStayOnOrigin(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "docs"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "page.md"), []byte("page"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	handler, err := (&Server{Root: root}).Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for target, want := range map[string]string{
+		"/%2fdocs?view=full":    "/docs/?view=full",
+		"/%2fpage.md?view=full": "/page?view=full",
+	} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		if got := rec.Header().Get("Location"); got != want {
+			t.Errorf("GET %s location = %q, want %q", target, got, want)
+		}
+	}
+}
+
+func TestRouteErrorsDoNotExposePaths(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("file"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("loop.txt", filepath.Join(root, "loop.txt")); err != nil {
+		t.Fatal(err)
+	}
+	handler, err := (&Server{Root: root}).Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for target, want := range map[string]int{
+		"/file.txt/child.txt": http.StatusNotFound,
+		"/loop.txt":           http.StatusInternalServerError,
+		"/.private.txt":       http.StatusNotFound,
+	} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		if rec.Code != want || strings.Contains(rec.Body.String(), root) {
+			t.Errorf("GET %s = %d %q", target, rec.Code, rec.Body.String())
+		}
+		if want == http.StatusInternalServerError && rec.Body.String() != "Internal Server Error\n" {
+			t.Errorf("unexpected error details: %q", rec.Body.String())
 		}
 	}
 }
