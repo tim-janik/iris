@@ -8,7 +8,11 @@ import (
 	"strings"
 )
 
-var ErrOutsideRoot = errors.New("path is outside root")
+var (
+	ErrOutsideRoot = errors.New("path is outside root")
+	ErrPrivatePath = errors.New("private source path")
+	ErrNotRegular  = errors.New("source path is not a regular file")
+)
 
 type Resolver struct {
 	root string
@@ -33,30 +37,48 @@ func New(root string) (*Resolver, error) {
 	return &Resolver{root: realRoot}, nil
 }
 
-func (r *Resolver) Resolve(urlPath string, extensions []string) (string, string, error) {
-	if r == nil || !strings.HasPrefix(urlPath, "/") {
-		return "", "", ErrOutsideRoot
+func (r *Resolver) ResolvePath(urlPath string) (string, os.FileInfo, error) {
+	if r == nil {
+		return "", nil, ErrOutsideRoot
 	}
-	trimmed := strings.TrimPrefix(urlPath, "/")
-	for _, part := range strings.Split(trimmed, "/") {
-		if part == "." || part == ".." || strings.ContainsRune(part, 0) || strings.ContainsRune(part, '\\') {
-			return "", "", ErrOutsideRoot
-		}
+	if err := validateURLPath(urlPath); err != nil {
+		return "", nil, err
 	}
-	for _, extension := range extensions {
-		candidate := filepath.Join(r.root, filepath.FromSlash(trimmed+extension))
-		realPath, err := filepath.EvalSymlinks(candidate)
-		if err != nil {
-			continue
-		}
-		rel, err := filepath.Rel(r.root, realPath)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return "", "", ErrOutsideRoot
-		}
-		info, err := os.Stat(realPath)
-		if err == nil && !info.IsDir() {
-			return realPath, extension, nil
+	candidate := filepath.Join(r.root, filepath.FromSlash(strings.Trim(urlPath, "/")))
+	realPath, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		return "", nil, err
+	}
+	rel, err := filepath.Rel(r.root, realPath)
+	if err != nil || !filepath.IsLocal(rel) {
+		return "", nil, ErrOutsideRoot
+	}
+	if rel != "." {
+		if err := validateURLPath(filepath.ToSlash(rel)); err != nil {
+			return "", nil, err
 		}
 	}
-	return "", "", os.ErrNotExist
+	info, err := os.Stat(realPath)
+	if err != nil {
+		return "", nil, err
+	}
+	if !info.IsDir() && !info.Mode().IsRegular() {
+		return realPath, info, ErrNotRegular
+	}
+	return realPath, info, nil
+}
+
+func validateURLPath(urlPath string) error {
+	if strings.ContainsRune(urlPath, 0) {
+		return ErrOutsideRoot
+	}
+	for _, part := range strings.Split(urlPath, "/") {
+		if part == "." || part == ".." || strings.ContainsRune(part, '\\') {
+			return ErrOutsideRoot
+		}
+		if strings.HasPrefix(part, ".") {
+			return ErrPrivatePath
+		}
+	}
+	return nil
 }

@@ -9,9 +9,11 @@ import (
 	"crypto/subtle"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	htmplt "html/template"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -20,6 +22,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/tim-janik/iris/adoc"
 	"github.com/tim-janik/iris/editlink"
@@ -125,10 +128,22 @@ func (s *Server) setActionCookie(w http.ResponseWriter) {
 
 // normalizePath ensures the URL path starts with a slash.
 func normalizePath(urlPath string) string {
-	if !strings.HasPrefix(urlPath, "/") {
-		return "/" + urlPath
+	return "/" + strings.TrimLeft(urlPath, "/")
+}
+
+func cleanSourceURL(urlPath string) string {
+	clean := strings.TrimSuffix(urlPath, filepath.Ext(urlPath))
+	if strings.HasSuffix(clean, "/index") {
+		clean = strings.TrimSuffix(clean, "index")
 	}
-	return urlPath
+	return clean
+}
+
+func withQuery(urlPath, rawQuery string) string {
+	if rawQuery == "" {
+		return urlPath
+	}
+	return urlPath + "?" + rawQuery
 }
 
 func serveRootPrefix(urlPath string) string {
@@ -156,35 +171,16 @@ func resolveMetadataDir(root, urlPath string) (string, error) {
 	if dirURL == "" {
 		dirURL = "/"
 	}
-	for _, component := range strings.Split(strings.Trim(dirURL, "/"), "/") {
-		if component == ".." || component == "." || strings.ContainsRune(component, 0) {
-			return "", fmt.Errorf("invalid metadata path")
-		}
-	}
-
-	rootAbs, err := filepath.Abs(root)
+	resolver, err := sourcepath.New(root)
 	if err != nil {
 		return "", err
 	}
-	rootReal, err := filepath.EvalSymlinks(rootAbs)
-	if err != nil {
-		return "", err
-	}
-	candidate := filepath.Join(rootReal, filepath.FromSlash(strings.TrimPrefix(dirURL, "/")))
-	dirReal, err := filepath.EvalSymlinks(candidate)
-	if err != nil {
-		return "", err
-	}
-	info, err := os.Stat(dirReal)
+	dirReal, info, err := resolver.ResolvePath(dirURL)
 	if err != nil {
 		return "", err
 	}
 	if !info.IsDir() {
 		return "", fmt.Errorf("metadata path is not a directory")
-	}
-	rel, err := filepath.Rel(rootReal, dirReal)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("metadata path escapes serve root")
 	}
 	return dirReal, nil
 }
@@ -221,7 +217,7 @@ func serveMetadata(w http.ResponseWriter, r *http.Request, root, urlPath string)
 
 	dir, err := resolveMetadataDir(root, urlPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if os.IsNotExist(err) || errors.Is(err, sourcepath.ErrPrivatePath) {
 			http.Error(w, "Not Found", http.StatusNotFound)
 		} else {
 			http.Error(w, "Bad metadata path", http.StatusBadRequest)
@@ -488,40 +484,40 @@ func (s *Server) Handler() (http.Handler, error) {
 		}
 
 		urlPath := normalizePath(r.URL.Path)
-
-		// Redirect .md/.adoc URLs to clean URLs (e.g. /foo.md → /foo)
-		// unless ?noredirect is set to request the raw source.
-		if ext := filepath.Ext(urlPath); ext == ".md" || ext == ".adoc" {
-			if !r.URL.Query().Has("noredirect") {
-				if _, _, err := resolver.Resolve(urlPath, []string{""}); err == nil {
-					target := templates.EncodeURLPath(strings.TrimSuffix(urlPath, ext))
-					if target == "" {
-						target = "/"
-					}
-					log.Printf("[302] %s -> %s", urlPath, target)
-					http.Redirect(w, r, target, http.StatusFound)
-					return
-				}
+		route, routeErr := resolver.ResolveRoute(urlPath)
+		if routeErr != nil {
+			if !errors.Is(routeErr, fs.ErrNotExist) && !errors.Is(routeErr, sourcepath.ErrNotRegular) &&
+				!errors.Is(routeErr, sourcepath.ErrPrivatePath) &&
+				!errors.Is(routeErr, sourcepath.ErrOutsideRoot) && !errors.Is(routeErr, syscall.ENOTDIR) {
+				log.Printf("[500] %s: %v", urlPath, routeErr)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
 			}
-		}
-
-		// Try the path as-is first, then append .md, then .adoc.
-		// convertToHTML is true only when we found the file by appending an extension
-		// (i.e. the user requested /foo/bar and we resolved it to /foo/bar.md).
-		absPath, extension, err := resolver.Resolve(urlPath, []string{"", ".md", ".adoc"})
-		found := err == nil
-		convertToHTML := found && extension != ""
-
-		if !found {
-			log.Printf("[404] %s (not found)", urlPath)
+			log.Printf("[404] %s: %v", urlPath, routeErr)
 			http.Error(w, fmt.Sprintf("Not Found: %s", urlPath), http.StatusNotFound)
 			return
 		}
+		if route.Redirect != "" {
+			target := withQuery(templates.EncodeURLPath(route.Redirect), r.URL.RawQuery)
+			log.Printf("[301] %s -> %s", urlPath, target)
+			http.Redirect(w, r, target, http.StatusMovedPermanently)
+			return
+		}
+		raw_source := route.DirectSource && r.URL.Query().Has("noredirect")
+		if route.DirectSource && !raw_source {
+			target := cleanSourceURL(urlPath)
+			if clean, err := resolver.ResolveRoute(target); err == nil && clean.Path == route.Path {
+				target = withQuery(templates.EncodeURLPath(target), r.URL.RawQuery)
+				log.Printf("[302] %s -> %s", urlPath, target)
+				http.Redirect(w, r, target, http.StatusFound)
+				return
+			}
+		}
+		absPath := route.Path
+		convertToHTML := route.Source && !raw_source
 
 		ext := strings.ToLower(filepath.Ext(absPath))
 
-		// If resolved by extension lookup, convert .md/.adoc to HTML.
-		// Otherwise treat as a regular file (passthrough or 404).
 		if !convertToHTML {
 			if !mimetype.IsPassthrough(ext) {
 				log.Printf("[404] %s (unsupported type)", urlPath)
@@ -571,7 +567,7 @@ func (s *Server) Handler() (http.Handler, error) {
 		var bodyContent string
 		var convertedTitle string
 		var pageMermaid bool
-		if strings.HasSuffix(absPath, ".adoc") {
+		if ext == ".adoc" {
 			htmlStr, convErr := adoc.Convert(s.AdocConfig, data)
 			if convErr != nil {
 				log.Printf("[500] %s -> %s: %v", urlPath, absPath, convErr)
@@ -626,7 +622,7 @@ func (s *Server) Handler() (http.Handler, error) {
 
 	handler := http.Handler(mux)
 	if s.EditLinkCmd != "" {
-		handler = editlink.Handler(editlink.Config{Cmd: s.EditLinkCmd, Token: s.actionToken}, mux, s.Root)
+		handler = editlink.Handler(editlink.Config{Cmd: s.EditLinkCmd, Token: s.actionToken}, mux, resolver)
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.setActionCookie(w)

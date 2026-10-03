@@ -24,6 +24,7 @@ import (
 	"github.com/tim-janik/iris/mimetype"
 	"github.com/tim-janik/iris/pandoc"
 	"github.com/tim-janik/iris/serve"
+	"github.com/tim-janik/iris/sourcepath"
 	"github.com/tim-janik/iris/templates"
 )
 
@@ -234,17 +235,17 @@ func serveMain() {
 	}
 }
 
-// recordServe walks root and records the response body of every URL that
-// iris serve answers, into outDir (cleared first). Paths mirror the served
-// URLs verbatim: /2005/hello (converted from 2005/hello.md) is written as
-// 2005/hello. Directories and non-passthrough files yield 404 in serve
-// mode and are not recorded. The outDir itself is excluded from the walk.
+// recordServe records file routes and directory indexes under outDir.
 func recordServe(handler http.Handler, root, outDir string) error {
 	rootAbs, outAbs, err := validate_output_paths(root, outDir)
 	if err != nil {
 		return err
 	}
 	root, outDir = rootAbs, outAbs
+	resolver, err := sourcepath.New(root)
+	if err != nil {
+		return err
+	}
 	if err := os.RemoveAll(outAbs); err != nil {
 		return fmt.Errorf("clear record dir: %w", err)
 	}
@@ -257,11 +258,13 @@ func recordServe(handler http.Handler, root, outDir string) error {
 			return err
 		}
 		if d.IsDir() {
+			if path != root && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
 			if abs, aerr := filepath.Abs(path); aerr == nil &&
 				(abs == outAbs || strings.HasPrefix(abs, outAbs+string(os.PathSeparator))) {
 				return filepath.SkipDir
 			}
-			return nil
 		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
@@ -271,18 +274,31 @@ func recordServe(handler http.Handler, root, outDir string) error {
 		ext := strings.ToLower(filepath.Ext(slash))
 		var urlPath string
 		switch {
+		case d.IsDir():
+			urlPath = "/"
+			if rel != "." {
+				urlPath += slash + "/"
+			}
 		case ext == ".md" || ext == ".adoc":
-			urlPath = "/" + strings.TrimSuffix(slash, ext)
+			urlPath = "/" + strings.TrimSuffix(slash, filepath.Ext(slash))
+			source, _, source_err := resolver.ResolvePath("/" + slash)
+			clean, clean_err := resolver.ResolveRoute(urlPath)
+			if source_err != nil || clean_err != nil || clean.Path != source {
+				urlPath = "/" + slash
+			}
 		case mimetype.IsPassthrough(ext):
 			urlPath = "/" + slash
 		default:
 			return nil // serve answers 404 for these
 		}
-		if prev, ok := seen[urlPath]; ok {
-			log.Printf("[skip] %s: same URL already served from %s", urlPath, prev)
+		record_path := strings.TrimPrefix(urlPath, "/")
+		if d.IsDir() {
+			record_path += "index.html"
+		}
+		if prev, ok := seen[record_path]; ok {
+			log.Printf("[skip] %s: same output already recorded from %s", urlPath, prev)
 			return nil
 		}
-		seen[urlPath] = rel
 
 		req := httptest.NewRequest(http.MethodGet, (&url.URL{Path: urlPath}).String(), nil)
 		rec := httptest.NewRecorder()
@@ -294,7 +310,7 @@ func recordServe(handler http.Handler, root, outDir string) error {
 			log.Printf("[%d] %s (not recorded)", rec.Code, urlPath)
 			return nil
 		}
-		record_path := strings.TrimPrefix(urlPath, "/")
+		seen[record_path] = rel
 		full := filepath.Join(outAbs, filepath.FromSlash(record_path))
 		record_rel, err := filepath.Rel(outAbs, full)
 		if err != nil || !filepath.IsLocal(record_rel) || record_rel == "." {
