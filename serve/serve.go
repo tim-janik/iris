@@ -431,6 +431,7 @@ func (s *Server) servePageAsset(w http.ResponseWriter, r *http.Request, name str
 		http.Error(w, "Unknown asset", http.StatusNotFound)
 		return
 	}
+	w.Header().Del("Set-Cookie")
 	w.Header().Set("Cache-Control", "public, max-age=3600, must-revalidate")
 	w.Header().Set("ETag", s.asset_etags[name])
 	w.Header().Set("Content-Type", contentType)

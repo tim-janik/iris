@@ -404,6 +404,9 @@ func TestPageAssetCaching(t *testing.T) {
 				if got := rec.Header().Get("Cache-Control"); got != "public, max-age=3600, must-revalidate" {
 					t.Errorf("cache control = %q", got)
 				}
+				if got := rec.Header().Get("Set-Cookie"); got != "" {
+					t.Errorf("cacheable response sets a cookie: %q", got)
+				}
 			}
 		})
 	}
