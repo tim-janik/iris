@@ -17,7 +17,7 @@ type Pattern struct {
 
 // Compile parses a pattern and rejects malformed segments.
 func Compile(pattern string) (*Pattern, error) {
-	parts := strings.Split(pattern, "/")
+	parts := strings.Split(filepath.ToSlash(pattern), "/")
 	for _, p := range parts {
 		if p == "**" {
 			continue // ** is always valid
@@ -33,7 +33,7 @@ func Compile(pattern string) (*Pattern, error) {
 
 // Match reports whether path matches the compiled pattern.
 func (p *Pattern) Match(path string) bool {
-	segs := strings.Split(path, "/")
+	segs := strings.Split(filepath.ToSlash(path), "/")
 	return matchParts(p.parts, segs)
 }
 
@@ -61,14 +61,14 @@ func matchParts(parts, segs []string) bool {
 	return err == nil && ok && matchParts(parts[1:], segs[1:])
 }
 
-// String returns the original pattern string.
+// String returns the slash-separated pattern string.
 func (p *Pattern) String() string {
 	return strings.Join(p.parts, "/")
 }
 
 // IsHidden returns true if any path segment starts with '.'.
 func IsHidden(path string) bool {
-	for _, seg := range strings.Split(path, "/") {
+	for _, seg := range strings.Split(filepath.ToSlash(path), "/") {
 		if len(seg) > 0 && seg[0] == '.' {
 			return true
 		}
