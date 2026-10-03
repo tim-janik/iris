@@ -290,6 +290,9 @@ func TestDashboardAsset(t *testing.T) {
 	if len(rec.Body.Bytes()) == 0 {
 		t.Fatal("empty dashboard asset")
 	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("cache control = %q", got)
+	}
 }
 
 func TestPageAssetsRoute(t *testing.T) {
@@ -351,6 +354,61 @@ func TestPageAssetsRoute(t *testing.T) {
 				t.Errorf("%s: body = %q, want %q", test.name, rec.Body.String(), test.wantBody)
 			}
 		}
+	}
+}
+
+func TestPageAssetCaching(t *testing.T) {
+	server := &Server{Root: t.TempDir(), HighlightScript: []byte("js"), HighlightStyle: []byte("css"), MermaidScript: []byte("mermaid")}
+	handler, err := server.Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for asset, body := range map[string]string{"highlight.min.js": "js", "github.min.css": "css", "mermaid.min.js": "mermaid"} {
+		t.Run(asset, func(t *testing.T) {
+			request := func(method, etag string) *httptest.ResponseRecorder {
+				req := httptest.NewRequest(method, "/..~meta~?asset="+asset, nil)
+				req.Header.Set("If-None-Match", etag)
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				return rec
+			}
+			first := request(http.MethodGet, "")
+			if first.Code != http.StatusOK || first.Body.String() != body {
+				t.Fatalf("first response = %d %q", first.Code, first.Body.String())
+			}
+			etag := first.Header().Get("ETag")
+			if etag == "" {
+				t.Fatal("missing ETag")
+			}
+			for _, test := range []struct {
+				method string
+				match  string
+				status int
+				body   string
+			}{
+				{http.MethodGet, "", http.StatusOK, body},
+				{http.MethodGet, etag, http.StatusNotModified, ""},
+				{http.MethodGet, `"other", W/` + etag, http.StatusNotModified, ""},
+				{http.MethodGet, "*", http.StatusNotModified, ""},
+				{http.MethodGet, `"other"`, http.StatusOK, body},
+				{http.MethodHead, "", http.StatusOK, ""},
+				{http.MethodHead, etag, http.StatusNotModified, ""},
+			} {
+				rec := request(test.method, test.match)
+				if rec.Code != test.status || rec.Body.String() != test.body {
+					t.Errorf("%s with %q: response = %d %q, want %d %q", test.method, test.match, rec.Code, rec.Body.String(), test.status, test.body)
+				}
+				if got := rec.Header().Get("ETag"); got != etag {
+					t.Errorf("ETag = %q, want %q", got, etag)
+				}
+				if got := rec.Header().Get("Cache-Control"); got != "public, max-age=3600, must-revalidate" {
+					t.Errorf("cache control = %q", got)
+				}
+				if got := rec.Header().Get("Set-Cookie"); got != "" {
+					t.Errorf("cacheable response sets a cookie: %q", got)
+				}
+			}
+		})
 	}
 }
 

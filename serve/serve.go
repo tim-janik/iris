@@ -5,7 +5,9 @@
 package serve
 
 import (
+	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	_ "embed"
 	"encoding/json"
@@ -20,6 +22,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/tim-janik/iris/adoc"
 	"github.com/tim-janik/iris/editlink"
@@ -84,6 +87,7 @@ type Server struct {
 	HighlightStyle  []byte
 	MermaidScript   []byte
 	actionToken     string
+	asset_etags     map[string]string
 }
 
 func newActionToken() (string, error) {
@@ -427,12 +431,11 @@ func (s *Server) servePageAsset(w http.ResponseWriter, r *http.Request, name str
 		http.Error(w, "Unknown asset", http.StatusNotFound)
 		return
 	}
-	writeNoCache(w)
+	w.Header().Del("Set-Cookie")
+	w.Header().Set("Cache-Control", "public, max-age=3600, must-revalidate")
+	w.Header().Set("ETag", s.asset_etags[name])
 	w.Header().Set("Content-Type", contentType)
-	if r.Method == http.MethodHead {
-		return
-	}
-	_, _ = w.Write(data)
+	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
 }
 
 // Serve starts the HTTP server and blocks until the server exits or errors.
@@ -458,6 +461,14 @@ func (s *Server) Handler() (http.Handler, error) {
 	resolver, err := sourcepath.New(s.Root)
 	if err != nil {
 		return nil, fmt.Errorf("resolve serve root: %w", err)
+	}
+	s.asset_etags = make(map[string]string, 3)
+	for name, data := range map[string][]byte{
+		"highlight.min.js": s.HighlightScript,
+		"github.min.css":   s.HighlightStyle,
+		"mermaid.min.js":   s.MermaidScript,
+	} {
+		s.asset_etags[name] = fmt.Sprintf(`"%x"`, sha256.Sum256(data))
 	}
 
 	cfg := s.PandocConfig
