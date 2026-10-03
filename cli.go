@@ -2,8 +2,10 @@
 package main
 
 import (
+	"crypto/rand"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -22,6 +24,7 @@ import (
 	"github.com/tim-janik/iris/mimetype"
 	"github.com/tim-janik/iris/pandoc"
 	"github.com/tim-janik/iris/serve"
+	"github.com/tim-janik/iris/sourcepath"
 	"github.com/tim-janik/iris/templates"
 )
 
@@ -110,15 +113,15 @@ func parseSSGArgs() ssgArgs {
 		os.Exit(1)
 	}
 
-	inputDir, _ := filepath.Abs(args[0])
-	outputDir, _ := filepath.Abs(args[1])
-
 	w := *workers
-	if w <= 0 {
+	if w < 0 {
+		log.Fatalf("invalid worker count: %d", w)
+	}
+	if w == 0 {
 		w = runtime.NumCPU()
 	}
 
-	return ssgArgs{clearOutput: *clearOutput, inputDir: inputDir, outputDir: outputDir, configFile: *configFile, templateDir: *templateDir, workers: w, now: parseNow(*nowFlag)}
+	return ssgArgs{clearOutput: *clearOutput, inputDir: args[0], outputDir: args[1], configFile: *configFile, templateDir: *templateDir, workers: w, now: parseNow(*nowFlag)}
 }
 
 // parseNow resolves the effective "current time" for a build: the -now flag
@@ -232,17 +235,17 @@ func serveMain() {
 	}
 }
 
-// recordServe walks root and records the response body of every URL that
-// iris serve answers, into outDir (cleared first). Paths mirror the served
-// URLs verbatim: /2005/hello (converted from 2005/hello.md) is written as
-// 2005/hello. Directories and non-passthrough files yield 404 in serve
-// mode and are not recorded. The outDir itself is excluded from the walk.
+// recordServe records file routes and directory indexes under outDir.
 func recordServe(handler http.Handler, root, outDir string) error {
 	rootAbs, outAbs, err := validate_output_paths(root, outDir)
 	if err != nil {
 		return err
 	}
 	root, outDir = rootAbs, outAbs
+	resolver, err := sourcepath.New(root)
+	if err != nil {
+		return err
+	}
 	if err := os.RemoveAll(outAbs); err != nil {
 		return fmt.Errorf("clear record dir: %w", err)
 	}
@@ -255,11 +258,13 @@ func recordServe(handler http.Handler, root, outDir string) error {
 			return err
 		}
 		if d.IsDir() {
+			if path != root && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
 			if abs, aerr := filepath.Abs(path); aerr == nil &&
 				(abs == outAbs || strings.HasPrefix(abs, outAbs+string(os.PathSeparator))) {
 				return filepath.SkipDir
 			}
-			return nil
 		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
@@ -269,18 +274,31 @@ func recordServe(handler http.Handler, root, outDir string) error {
 		ext := strings.ToLower(filepath.Ext(slash))
 		var urlPath string
 		switch {
+		case d.IsDir():
+			urlPath = "/"
+			if rel != "." {
+				urlPath += slash + "/"
+			}
 		case ext == ".md" || ext == ".adoc":
-			urlPath = "/" + strings.TrimSuffix(slash, ext)
+			urlPath = "/" + strings.TrimSuffix(slash, filepath.Ext(slash))
+			source, _, source_err := resolver.ResolvePath("/" + slash)
+			clean, clean_err := resolver.ResolveRoute(urlPath)
+			if source_err != nil || clean_err != nil || clean.Path != source {
+				urlPath = "/" + slash
+			}
 		case mimetype.IsPassthrough(ext):
 			urlPath = "/" + slash
 		default:
 			return nil // serve answers 404 for these
 		}
-		if prev, ok := seen[urlPath]; ok {
-			log.Printf("[skip] %s: same URL already served from %s", urlPath, prev)
+		record_path := strings.TrimPrefix(urlPath, "/")
+		if d.IsDir() {
+			record_path += "index.html"
+		}
+		if prev, ok := seen[record_path]; ok {
+			log.Printf("[skip] %s: same output already recorded from %s", urlPath, prev)
 			return nil
 		}
-		seen[urlPath] = rel
 
 		req := httptest.NewRequest(http.MethodGet, (&url.URL{Path: urlPath}).String(), nil)
 		rec := httptest.NewRecorder()
@@ -292,7 +310,7 @@ func recordServe(handler http.Handler, root, outDir string) error {
 			log.Printf("[%d] %s (not recorded)", rec.Code, urlPath)
 			return nil
 		}
-		record_path := strings.TrimPrefix(urlPath, "/")
+		seen[record_path] = rel
 		full := filepath.Join(outAbs, filepath.FromSlash(record_path))
 		record_rel, err := filepath.Rel(outAbs, full)
 		if err != nil || !filepath.IsLocal(record_rel) || record_rel == "." {
@@ -313,49 +331,148 @@ func recordServe(handler http.Handler, root, outDir string) error {
 // Main
 // ---------------------------------------------------------------------------
 
-func prepareOutputDir(dir string, clear bool) {
-	if clear {
-		log.Printf("Cleaning output directory: %s", dir)
-		if err := os.RemoveAll(dir); err != nil {
-			log.Fatalf("remove output dir: %v", err)
+func validateSSGArgs(args *ssgArgs) error {
+	if args.workers <= 0 {
+		return fmt.Errorf("worker count must be positive")
+	}
+	input_dir, output_dir, err := validate_output_paths(args.inputDir, args.outputDir)
+	if err != nil {
+		return err
+	}
+	if info, err := os.Stat(output_dir); err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("output path is not a directory: %s", output_dir)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat output directory: %w", err)
+	}
+	if args.templateDir != "" {
+		if _, _, err := validate_output_paths(args.templateDir, output_dir); err != nil {
+			return fmt.Errorf("template path: %w", err)
 		}
 	}
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		log.Fatalf("create output dir: %v", err)
-	}
+	args.inputDir, args.outputDir = input_dir, output_dir
+	return nil
 }
 
-// initEngine creates the template engine.
-// If templateDir is non-empty, templates are loaded from that directory.
-// Otherwise, embedded templates are used.
-func initEngine(templateDir string) *templates.Engine {
-	eng, err := templates.New(templateDir)
+func copyOutputTree(src, dst string) error {
+	output, err := os.OpenRoot(dst)
 	if err != nil {
-		log.Fatalf("init templates: %v", err)
+		return err
 	}
-	return eng
+	defer output.Close()
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		dest_info, err := output.Lstat(rel)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if dest_info != nil && !dest_info.IsDir() && !dest_info.Mode().IsRegular() {
+			return fmt.Errorf("cannot overwrite non-regular output entry: %s", rel)
+		}
+		if d.IsDir() {
+			return output.MkdirAll(rel, 0755)
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("cannot copy non-regular output entry: %s", path)
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		input, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer input.Close()
+		mode := info.Mode().Perm()
+		if dest_info != nil {
+			mode = dest_info.Mode().Perm()
+		}
+		temp := filepath.Join(filepath.Dir(rel), ".iris.tmp-"+rand.Text())
+		file, err := output.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+		if err != nil {
+			return err
+		}
+		defer output.Remove(temp)
+		_, copy_err := io.Copy(file, input)
+		if copy_err == nil && dest_info != nil {
+			copy_err = file.Chmod(mode)
+		}
+		close_err := file.Close()
+		if copy_err != nil {
+			return copy_err
+		}
+		if close_err != nil {
+			return close_err
+		}
+		return output.Rename(temp, rel)
+	})
 }
 
-func ssgMain() {
-	args := parseSSGArgs()
+func installOutput(stage, output string) error {
+	parent := filepath.Dir(output)
+	base := filepath.Base(output)
+	backup, err := os.MkdirTemp(parent, "."+base+".old-")
+	if err != nil {
+		return fmt.Errorf("create output backup: %w", err)
+	}
+	if err := os.Remove(backup); err != nil {
+		return fmt.Errorf("prepare output backup: %w", err)
+	}
+	oldExists := false
+	if info, err := os.Stat(output); err == nil {
+		oldExists = true
+		if err := os.Chmod(stage, info.Mode()); err != nil {
+			return fmt.Errorf("preserve output permissions: %w", err)
+		}
+		if err := os.Rename(output, backup); err != nil {
+			return fmt.Errorf("move previous output: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("check previous output: %w", err)
+	}
+	if err := os.Rename(stage, output); err != nil {
+		if oldExists {
+			if restore_err := os.Rename(backup, output); restore_err != nil {
+				return fmt.Errorf("install output: %w; restore backup %s: %w", err, backup, restore_err)
+			}
+		}
+		return fmt.Errorf("install output: %w", err)
+	}
+	if oldExists {
+		if err := os.RemoveAll(backup); err != nil {
+			log.Printf("output installed; cannot remove backup %s: %v", backup, err)
+		}
+	}
+	return nil
+}
+
+func runSSG(args ssgArgs) error {
+	if err := validateSSGArgs(&args); err != nil {
+		return err
+	}
 	log.Printf("Input:  %s", args.inputDir)
 	log.Printf("Output: %s", args.outputDir)
 
-	input_dir, output_dir, err := validate_output_paths(args.inputDir, args.outputDir)
+	eng, err := templates.New(args.templateDir)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("init templates: %w", err)
 	}
-	args.inputDir, args.outputDir = input_dir, output_dir
-	prepareOutputDir(args.outputDir, args.clearOutput)
-	if err := templates.WriteAssets(args.outputDir, highlightScriptAsset, highlightStyleAsset, mermaidScriptAsset); err != nil {
-		log.Fatalf("write template assets: %v", err)
+	site, err := loadSiteConfigChecked(args.inputDir, args.configFile)
+	if err != nil {
+		return err
 	}
-
-	eng := initEngine(args.templateDir)
-	site := loadSiteConfig(args.inputDir, args.configFile)
 	siteGo := toTemplateSite(site)
-	// Default the template feed link (page <link rel="alternate">) to the RSS
-	// feed path when feed_url is unset; generateFeeds keeps site.FeedURL raw.
 	if siteGo.FeedURL == "" {
 		siteGo.FeedURL = templates.JoinURLPath(site.URL, templates.RSSFeedPath)
 	}
@@ -364,32 +481,52 @@ func ssgMain() {
 	allInclude := append(append([]string{}, site.IncludeGlob...), site.AssetGlob...)
 	fileFilter, err := globstar.NewFilter(allInclude, site.ExcludeGlob)
 	if err != nil {
-		log.Fatalf("compile file filter: %v", err)
+		return fmt.Errorf("compile file filter: %w", err)
 	}
 
 	// Compile asset matcher (copy-only, no sitemap entry)
 	assetMatcher, err := globstar.NewMatcher(site.AssetGlob)
 	if err != nil {
-		log.Fatalf("compile asset matcher: %v", err)
+		return fmt.Errorf("compile asset matcher: %w", err)
 	}
 
 	// Walk + filter
 	allFiles, err := walkFiles(args.inputDir, args.outputDir, fileFilter)
 	if err != nil {
-		log.Fatalf("walk files: %v", err)
+		return fmt.Errorf("walk files: %w", err)
 	}
 
 	// Sort so classification order is stable regardless of FS walk order
 	sort.Strings(allFiles)
 	if err := validateOutputCollisions(allFiles); err != nil {
-		log.Fatalf("output collision: %v", err)
+		return err
 	}
 
+	parent := filepath.Dir(args.outputDir)
+	if err := os.MkdirAll(parent, 0755); err != nil {
+		return fmt.Errorf("create output parent: %w", err)
+	}
+	stage_parent := parent
+	if !args.clearOutput {
+		stage_parent = ""
+	}
+	stage_dir, err := os.MkdirTemp(stage_parent, "."+filepath.Base(args.outputDir)+".tmp-")
+	if err != nil {
+		return fmt.Errorf("create staging directory: %w", err)
+	}
+	defer os.RemoveAll(stage_dir)
+	stage := filepath.Join(stage_dir, "output")
+	if err := os.Mkdir(stage, 0755); err != nil {
+		return fmt.Errorf("create staged output: %w", err)
+	}
+	if err := templates.WriteAssets(stage, highlightScriptAsset, highlightStyleAsset, mermaidScriptAsset); err != nil {
+		return fmt.Errorf("write template assets: %w", err)
+	}
 	// Unified parallel queue: process all files (convert+render for .md/.adoc,
 	// copy for static files, git dates for pageclass.PageCopy)
-	pages, err := processAllFiles(allFiles, args.inputDir, args.outputDir, args.workers, assetMatcher, eng, siteGo)
+	pages, err := processAllFiles(allFiles, args.inputDir, stage, args.workers, assetMatcher, eng, siteGo)
 	if err != nil {
-		log.Fatalf("process files: %v", err)
+		return fmt.Errorf("process files: %w", err)
 	}
 	log.Printf("Found %d pages", len(pages))
 
@@ -400,27 +537,45 @@ func ssgMain() {
 	}, pages)
 
 	// Render pages (only types that need template rendering)
-	if err := renderAllPages(eng, pages, siteGo, args.outputDir); err != nil {
-		log.Fatalf("render pages: %v", err)
+	if err := renderAllPages(eng, pages, siteGo, stage); err != nil {
+		return err
 	}
 
 	// Generate directory indices (returns sitemap entries for each dirindex)
-	dirIndexEntries, err := generateDirIndices(eng, pages, siteGo, args.outputDir, args.now)
+	dirIndexEntries, err := generateDirIndices(eng, pages, siteGo, stage, args.now)
 	if err != nil {
-		log.Fatalf("generate directory indices: %v", err)
+		return err
 	}
 
 	// Generate RSS and Atom feeds (returns sitemap entries for feed files)
-	feedEntries, err := generateFeeds(eng, pages, site, siteGo, args.outputDir, args.now)
+	feedEntries, err := generateFeeds(eng, pages, site, siteGo, stage, args.now)
 	if err != nil {
-		log.Fatalf("generate feeds: %v", err)
+		return err
 	}
 
 	// Generate sitemap (after dirindices and feeds so all entries are known)
 	allExtra := append(dirIndexEntries, feedEntries...)
-	if err := generateSitemap(eng, pages, site, args.outputDir, allExtra, args.now); err != nil {
-		log.Fatalf("generate sitemap: %v", err)
+	if err := generateSitemap(eng, pages, site, stage, allExtra, args.now); err != nil {
+		return err
 	}
-
+	if args.clearOutput {
+		if err := installOutput(stage, args.outputDir); err != nil {
+			return err
+		}
+	} else {
+		if err := os.MkdirAll(args.outputDir, 0755); err != nil {
+			return err
+		}
+		if err := copyOutputTree(stage, args.outputDir); err != nil {
+			return fmt.Errorf("install output contents: %w", err)
+		}
+	}
 	log.Printf("Done. Output in %s", args.outputDir)
+	return nil
+}
+
+func ssgMain() {
+	if err := runSSG(parseSSGArgs()); err != nil {
+		log.Fatalf("ssg: %v", err)
+	}
 }
