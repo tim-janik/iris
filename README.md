@@ -28,6 +28,7 @@ It depends on `pandoc` for Markdown and `asciidoctor` for AsciiDoc to render tho
 * Keeps URLs clean, without `.html` suffixes
 * Shows email comments (`.eml` files) on post pages
 * While serving, lists frontmatter files as a sortable, filterable board in the browser, and creates new ones from a form
+* While serving, shows plain Markdown TODO files as a responsive dashboard of collapsible lists
 
 
 ## Install
@@ -80,3 +81,24 @@ an error during the final copy can leave some files updated. Generated files are
 to new files, then renamed into place. Generated paths that hit symlinks or special files are rejected.
 Merge mode keeps existing file permissions; both modes keep output-directory
 permissions. New entries respect the process umask.
+
+
+## TODO dashboard
+
+Keep TODO lists in plain Markdown files. Each `##` heading starts a list, and each top-level bullet is a row.
+Bold text is the title. Text after the `:` is the detail, and it shows as one collapsible line per comma.
+
+```markdown
+## Gardening
+
+- **Mow garden** : Repair mower, fix cable, mow before Sunday
+- **Trim hedge**
+```
+
+A dashboard is a Markdown page that names those files, relative to the page:
+
+```markdown
+<div class="dashboard-widget" data-view="lists" data-files="todos/garden.md, todos/house.md"></div>
+```
+
+Lists sit side by side and stack on narrow screens. The widget runs under `iris serve`.

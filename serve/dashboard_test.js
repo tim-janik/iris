@@ -263,3 +263,80 @@ test("uses number/string fallbacks and reports omitted records", () => {
   assert.deepEqual(result.entries.map((entry) => entry.title), ["two", "ten"]);
   assert.equal(result.omitted, 1);
 });
+
+test("parses todo lists from headings and bullets", () => {
+  const text = [
+    "---", "title: Todos", "---",
+    "- Loose item",
+    "## Gardening", "",
+    "- **Mow garden** : Repair mower, fix cable, mow before Sunday",
+    "- **Trim hedge**",
+    "- **Colon inside:** check tools",
+    "  - nested notes are ignored",
+    "Plain text is ignored.",
+    "## House\r",
+    "* Plain bullet\r"
+  ].join("\n");
+  assert.deepEqual(JSON.parse(JSON.stringify(dashboard.parseTodoLists(text, "todos"))), [
+    { title: "todos", items: [{ title: "Loose item", details: [] }] },
+    { title: "Gardening", items: [
+      { title: "Mow garden", details: ["Repair mower", "Fix cable", "Mow before Sunday"] },
+      { title: "Trim hedge", details: [] },
+      { title: "Colon inside", details: ["Check tools"] }
+    ] },
+    { title: "House", items: [{ title: "Plain bullet", details: [] }] }
+  ]);
+});
+
+test("parses ordinary Markdown spellings of todo items", () => {
+  const text = [
+    "## Tasks",
+    "  - **Indented** : first",
+    "  - __Underscores__ : second",
+    "  - **Wrapped** :",
+    "    third,",
+    "    fourth",
+    "    - nested notes are ignored",
+    "\t- tab nested notes are ignored",
+    "- Long plain",
+    "  title",
+    "",
+    "```",
+    "## Example",
+    "- example bullet",
+    "~~~",
+    "```",
+    "~~~",
+    "- tilde example",
+    "```",
+    "~~~",
+    "- **After fences**"
+  ].join("\n");
+  assert.deepEqual(JSON.parse(JSON.stringify(dashboard.parseTodoLists(text, "todos"))), [
+    { title: "Tasks", items: [
+      { title: "Indented", details: ["First"] },
+      { title: "Underscores", details: ["Second"] },
+      { title: "Wrapped", details: ["Third", "Fourth"] },
+      { title: "Long plain title", details: [] },
+      { title: "After fences", details: [] }
+    ] }
+  ]);
+});
+
+test("only todo rows with details are collapsible", () => {
+  const widget = fakeElement("div");
+  dashboard.renderTodoLists(widget, [{ title: "House", items: [
+    { title: "Fix tap", details: ["Check washer"] },
+    { title: "Clean windows", details: [] }
+  ] }]);
+  const [heading, rows] = widget.childNodes[0].childNodes[0].childNodes;
+  assert.equal(heading.textContent, "House");
+  const [withDetails, plain] = rows.childNodes;
+  assert.equal(withDetails.childNodes[0].tagName, "details");
+  assert.equal(withDetails.childNodes[0].childNodes[0].tagName, "summary");
+  assert.equal(plain.textContent, "Clean windows");
+  assert.equal(plain.childNodes.length, 0);
+
+  dashboard.renderTodoLists(widget, []);
+  assert.equal(widget.childNodes[0].className, "dashboard-empty");
+});

@@ -273,8 +273,12 @@
     widget.replaceChildren(list);
   }
 
+  function widgetView(widget) {
+    return (widget.getAttribute("data-view") || "cards").trim().toLowerCase();
+  }
+
   function render(widget, entries) {
-    var view = (widget.getAttribute("data-view") || "cards").trim().toLowerCase();
+    var view = widgetView(widget);
     if (view !== "cards") {
       widget.replaceChildren(node("p", "Unsupported dashboard view: " + view, "dashboard-error"));
       return;
@@ -293,7 +297,7 @@
     if (document.getElementById("iris-dashboard-style")) return;
     var style = document.createElement("style");
     style.id = "iris-dashboard-style";
-    style.textContent = ".dashboard-card-line{display:flex;gap:.45em;align-items:baseline}.dashboard-status{font-size:1.1em;color:#777}.dashboard-status--open{color:#668}.dashboard-status--in-progress,.dashboard-status--in_progress{color:#a76}.dashboard-status--done,.dashboard-status--complete{color:#686}.dashboard-metadata{display:flex;align-items:baseline;color:#777;font-size:.9em}.dashboard-field::after{content:\"\\00b7\";margin:0 .5em}.dashboard-field:last-child::after{content:\"\";margin:0}.dashboard-field--due-soon{color:#a57400}.dashboard-field--due-overdue{color:#b33}.dashboard-description{margin:.2em 0 0}.dashboard-others{margin:0;color:#777;font-style:italic}" + ".dashboard-new fieldset{border:1px solid #ccc;border-radius:6px;margin:1em 0;padding:.75em 1em}.dashboard-new legend{font-weight:bold}.dashboard-new .dashboard-new-name{display:flex;align-items:baseline;gap:.4em}.dashboard-new .dashboard-new-suffix{color:#999}.dashboard-new .dashboard-new-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13em,1fr));gap:.6em 1.2em;margin:1em 0}.dashboard-new label{display:flex;flex-direction:column;gap:.15em;font-size:.9em;color:#555}.dashboard-new input[type=text],.dashboard-new input[type=date],.dashboard-new select,.dashboard-new textarea{padding:.3em .4em;border:1px solid #ccc;border-radius:4px;font:inherit;color:#222}.dashboard-new textarea{width:100%;box-sizing:border-box}.dashboard-new button{margin-top:.6em;padding:.4em 1.1em}.dashboard-new .dashboard-new-status{color:#777;font-size:.9em;margin-left:.6em}.dashboard-new .dashboard-new-status.dashboard-error{color:#a33}.dashboard-new .dashboard-new-reload{background:#fff;color:#555;border:1px solid #aaa}.dashboard-new .dashboard-new-reload:hover{background:#f2f2f2}";
+    style.textContent = ".dashboard-card-line{display:flex;gap:.45em;align-items:baseline}.dashboard-status{font-size:1.1em;color:#777}.dashboard-status--open{color:#668}.dashboard-status--in-progress,.dashboard-status--in_progress{color:#a76}.dashboard-status--done,.dashboard-status--complete{color:#686}.dashboard-metadata{display:flex;align-items:baseline;color:#777;font-size:.9em}.dashboard-field::after{content:\"\\00b7\";margin:0 .5em}.dashboard-field:last-child::after{content:\"\";margin:0}.dashboard-field--due-soon{color:#a57400}.dashboard-field--due-overdue{color:#b33}.dashboard-description{margin:.2em 0 0}.dashboard-others{margin:0;color:#777;font-style:italic}" + ".dashboard-new fieldset{border:1px solid #ccc;border-radius:6px;margin:1em 0;padding:.75em 1em}.dashboard-new legend{font-weight:bold}.dashboard-new .dashboard-new-name{display:flex;align-items:baseline;gap:.4em}.dashboard-new .dashboard-new-suffix{color:#999}.dashboard-new .dashboard-new-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13em,1fr));gap:.6em 1.2em;margin:1em 0}.dashboard-new label{display:flex;flex-direction:column;gap:.15em;font-size:.9em;color:#555}.dashboard-new input[type=text],.dashboard-new input[type=date],.dashboard-new select,.dashboard-new textarea{padding:.3em .4em;border:1px solid #ccc;border-radius:4px;font:inherit;color:#222}.dashboard-new textarea{width:100%;box-sizing:border-box}.dashboard-new button{margin-top:.6em;padding:.4em 1.1em}.dashboard-new .dashboard-new-status{color:#777;font-size:.9em;margin-left:.6em}.dashboard-new .dashboard-new-status.dashboard-error{color:#a33}.dashboard-new .dashboard-new-reload{background:#fff;color:#555;border:1px solid #aaa}.dashboard-new .dashboard-new-reload:hover{background:#f2f2f2}" + ".dashboard-lists{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(18em,100%),1fr));gap:1em;align-items:start}.dashboard-list{border:1px solid #ccc;border-radius:6px}.dashboard-list h2{margin:0;padding:.4em .75em;font-size:1.1em;border-bottom:1px solid #ccc}.dashboard-list ul{list-style:none;margin:0;padding:.3em 0}.dashboard-list li{margin:0;padding:.2em .75em}.dashboard-list summary{display:flex;justify-content:space-between;gap:.5em;cursor:pointer;list-style:none}.dashboard-list summary::-webkit-details-marker{display:none}.dashboard-list summary::after{content:\"\\25b8\"}.dashboard-list details[open]>summary::after{content:\"\\25be\"}.dashboard-todo-detail{padding-left:1em;color:#555;font-size:.9em}";
     document.head.appendChild(style);
   }
 
@@ -481,6 +485,119 @@
       });
   }
 
+  // --- todo lists widget (.dashboard-widget with data-view="lists") ---
+  function todoItem(text) {
+    var strong = /^(\*\*|__)(.+?):?\1\s*:?\s*(.*)$/.exec(text);
+    return {
+      title: strong ? strong[2] : text,
+      details: strong && strong[3] ? strong[3].split(/,\s+/).map(capitalized) : []
+    };
+  }
+
+  function parseTodoLists(text, fallbackTitle) {
+    var parsed = splitFrontmatter(text);
+    var lines = parsed ? parsed.rest : String(text).split("\n");
+    var lists = [];
+    var current = null;
+    var open = null; // bullet being collected: { text, offset }
+    var fence = null;
+    function flush() {
+      if (open) current.items.push(todoItem(open.text));
+      open = null;
+    }
+    lines.forEach(function (rawLine) {
+      var line = rawLine.replace(/\t/g, "    ");
+      var marker = /^\s*(`{3,}|~{3,})/.exec(line);
+      if (marker) {
+        if (!fence) fence = marker[1].charAt(0);
+        else if (fence === marker[1].charAt(0)) fence = null;
+        return;
+      }
+      if (fence) return;
+      var heading = /^##\s+(.+?)\s*$/.exec(line);
+      if (heading) {
+        flush();
+        current = { title: heading[1], items: [] };
+        lists.push(current);
+        return;
+      }
+      var bullet = /^( *)[-*+](\s+)(.+?)\s*$/.exec(line);
+      if (bullet) {
+        if (open && bullet[1].length >= open.offset) return; // nested bullet
+        flush();
+        if (!current) {
+          current = { title: fallbackTitle, items: [] };
+          lists.push(current);
+        }
+        open = { text: bullet[3], offset: bullet[1].length + 1 + bullet[2].length };
+        return;
+      }
+      if (open && /^\s+\S/.test(line)) open.text += " " + line.trim();
+      else if (line.trim()) flush();
+    });
+    flush();
+    return lists;
+  }
+
+  function todoRow(item) {
+    if (!item.details.length) return node("li", item.title);
+    var details = node("details");
+    details.appendChild(node("summary", item.title));
+    item.details.forEach(function (line) {
+      details.appendChild(node("div", line, "dashboard-todo-detail"));
+    });
+    var row = node("li");
+    row.appendChild(details);
+    return row;
+  }
+
+  function renderTodoLists(widget, lists) {
+    if (!lists.length) {
+      widget.replaceChildren(node("p", "No todo lists found.", "dashboard-empty"));
+      return;
+    }
+    var grid = node("div", undefined, "dashboard-lists");
+    lists.forEach(function (list) {
+      var section = node("section", undefined, "dashboard-list");
+      section.appendChild(node("h2", list.title));
+      var rows = node("ul");
+      list.items.forEach(function (item) { rows.appendChild(todoRow(item)); });
+      section.appendChild(rows);
+      grid.appendChild(section);
+    });
+    widget.replaceChildren(grid);
+  }
+
+  // data-files lists markdown files, comma-separated, relative to the page.
+  function fetchTodoLists(file) {
+    var url = file.split("/").map(encodeURIComponent).join("/") + "?noredirect";
+    return fetch(url).then(function (response) {
+      if (!response.ok) throw new Error(file + " (" + response.status + ")");
+      return response.text();
+    }).then(function (text) {
+      return parseTodoLists(text, stripMdSuffix(file.split("/").pop()));
+    });
+  }
+
+  function loadTodoLists(widget) {
+    ensureStyles();
+    widget.setAttribute("aria-busy", "true");
+    widget.replaceChildren(node("p", "Loading dashboard…", "dashboard-loading"));
+    var files = (widget.getAttribute("data-files") || "").split(",").map(function (file) {
+      return file.trim();
+    }).filter(Boolean);
+    Promise.all(files.map(fetchTodoLists))
+      .then(function (results) {
+        renderTodoLists(widget, [].concat.apply([], results));
+      })
+      .catch(function (error) {
+        widget.replaceChildren(node("p", "Dashboard unavailable: " + error.message, "dashboard-error"));
+      })
+      .finally(function () {
+        widget.removeAttribute("aria-busy");
+      });
+  }
+
   var api = {
     matches: matches,
     compareEntries: compareEntries,
@@ -499,13 +616,17 @@
     firstValue: firstValue,
     estimateValue: estimateValue,
     dueStatus: dueStatus,
-    reloadAfterCreate: reloadAfterCreate
+    reloadAfterCreate: reloadAfterCreate,
+    parseTodoLists: parseTodoLists,
+    renderTodoLists: renderTodoLists
   };
   if (global) global.IrisDashboard = api;
 
   function start() {
     var widgets = Array.prototype.slice.call(document.querySelectorAll(".dashboard-widget"));
-    if (widgets.length) loadAll(widgets);
+    var boards = widgets.filter(function (widget) { return widgetView(widget) !== "lists"; });
+    if (boards.length) loadAll(boards);
+    widgets.filter(function (widget) { return widgetView(widget) === "lists"; }).forEach(loadTodoLists);
     var forms = Array.prototype.slice.call(document.querySelectorAll("form.dashboard-new"));
     if (forms.length) {
       ensureStyles();
