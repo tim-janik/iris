@@ -272,19 +272,19 @@ test("parses todo lists from headings and bullets", () => {
     "- **Mow garden** : Repair mower, fix cable, mow before Sunday",
     "- **Trim hedge**",
     "- **Colon inside:** check tools",
-    "  - nested notes are ignored",
+    "  - nested subtask",
     "Plain text is ignored.",
     "## House\r",
     "* Plain bullet\r"
   ].join("\n");
   assert.deepEqual(JSON.parse(JSON.stringify(dashboard.parseTodoLists(text, "todos"))), [
-    { title: "todos", items: [{ title: "Loose item", details: [] }] },
+    { title: "todos", items: [{ title: "Loose item", details: [], subtasks: [] }] },
     { title: "Gardening", items: [
-      { title: "Mow garden", details: ["Repair mower", "Fix cable", "Mow before Sunday"] },
-      { title: "Trim hedge", details: [] },
-      { title: "Colon inside", details: ["Check tools"] }
+      { title: "Mow garden", details: ["Repair mower", "Fix cable", "Mow before Sunday"], subtasks: [] },
+      { title: "Trim hedge", details: [], subtasks: [] },
+      { title: "Colon inside", details: ["Check tools"], subtasks: [{ text: "nested subtask", depth: 0 }] }
     ] },
-    { title: "House", items: [{ title: "Plain bullet", details: [] }] }
+    { title: "House", items: [{ title: "Plain bullet", details: [], subtasks: [] }] }
   ]);
 });
 
@@ -296,8 +296,8 @@ test("parses ordinary Markdown spellings of todo items", () => {
     "  - **Wrapped** :",
     "    third,",
     "    fourth",
-    "    - nested notes are ignored",
-    "\t- tab nested notes are ignored",
+    "    - nested subtask",
+    "\t- tab subtask",
     "- Long plain",
     "  title",
     "",
@@ -314,11 +314,11 @@ test("parses ordinary Markdown spellings of todo items", () => {
   ].join("\n");
   assert.deepEqual(JSON.parse(JSON.stringify(dashboard.parseTodoLists(text, "todos"))), [
     { title: "Tasks", items: [
-      { title: "Indented", details: ["First"] },
-      { title: "Underscores", details: ["Second"] },
-      { title: "Wrapped", details: ["Third", "Fourth"] },
-      { title: "Long plain title", details: [] },
-      { title: "After fences", details: [] }
+      { title: "Indented", details: ["First"], subtasks: [] },
+      { title: "Underscores", details: ["Second"], subtasks: [] },
+      { title: "Wrapped", details: ["Third", "Fourth"], subtasks: [{ text: "nested subtask", depth: 0 }, { text: "tab subtask", depth: 0 }] },
+      { title: "Long plain title", details: [], subtasks: [] },
+      { title: "After fences", details: [], subtasks: [] }
     ] }
   ]);
 });
@@ -338,37 +338,56 @@ test("every todo item gets a title, with or without markup", () => {
     "see https://example.com/x today",
     "title:"
   ), [
-    { title: "title", details: ["Body"] },
-    { title: "title", details: ["Body", "More"] },
-    { title: "title", details: ["Body"] },
-    { title: "title", details: ["Body"] },
-    { title: "title", details: ["Body"] },
-    { title: "three word title", details: [] },
-    { title: "three word title", details: ["Rest body"] },
-    { title: "short", details: ["Then body", "More"] },
-    { title: "12:30 call the", details: ["Plumber"] },
-    { title: "see https://example.com/x today", details: [] },
-    { title: "title", details: [] }
+    { title: "title", details: ["Body"], subtasks: [] },
+    { title: "title", details: ["Body", "More"], subtasks: [] },
+    { title: "title", details: ["Body"], subtasks: [] },
+    { title: "title", details: ["Body"], subtasks: [] },
+    { title: "title", details: ["Body"], subtasks: [] },
+    { title: "three word title", details: [], subtasks: [] },
+    { title: "three word title", details: ["Rest body"], subtasks: [] },
+    { title: "short", details: ["Then body", "More"], subtasks: [] },
+    { title: "12:30 call the", details: ["Plumber"], subtasks: [] },
+    { title: "see https://example.com/x today", details: [], subtasks: [] },
+    { title: "title", details: [], subtasks: [] }
   ]);
 });
 
-test("text under a nested bullet stays out of the parent", () => {
-  const text = ["## L", "- **A** : one", "  - nested", "    nested text", "  two", "- B"].join("\n");
+test("nested bullets become subtasks with their depth", () => {
+  const text = [
+    "## L",
+    "- **A** : one",
+    "  - sub",
+    "    sub text",
+    "    - deep",
+    "  - next",
+    "  two",
+    "- **B**",
+    "  - only subtask",
+    "- C"
+  ].join("\n");
   assert.deepEqual(JSON.parse(JSON.stringify(dashboard.parseTodoLists(text, "t")[0].items)), [
-    { title: "A", details: ["One two"] },
-    { title: "B", details: [] }
+    { title: "A", details: ["One two"], subtasks: [
+      { text: "sub sub text", depth: 0 },
+      { text: "deep", depth: 1 },
+      { text: "next", depth: 0 }
+    ] },
+    { title: "B", details: [], subtasks: [{ text: "only subtask", depth: 0 }] },
+    { title: "C", details: [], subtasks: [] }
   ]);
 });
 
-test("only todo rows with details are collapsible", () => {
+test("only todo rows with details or subtasks are collapsible", () => {
   const widget = fakeElement("div");
   dashboard.renderTodoLists(widget, [{ title: "House", items: [
-    { title: "Fix tap", details: ["Check washer"] },
-    { title: "Clean windows", details: [] }
+    { title: "Fix tap", details: ["Check washer"], subtasks: [] },
+    { title: "Clean windows", details: [], subtasks: [] },
+    { title: "Paint", details: [], subtasks: [{ text: "buy, mix", depth: 1 }] }
   ] }]);
   const [heading, rows] = widget.childNodes[0].childNodes[0].childNodes;
   assert.equal(heading.textContent, "House");
-  const [withDetails, plain] = rows.childNodes;
+  const [withDetails, plain, withSubtasks] = rows.childNodes;
+  const [, subtask] = withSubtasks.childNodes[0].childNodes;
+  assert.equal(subtask.textContent, "Buy, mix");
   assert.equal(withDetails.childNodes[0].tagName, "details");
   assert.equal(withDetails.childNodes[0].childNodes[0].tagName, "summary");
   assert.equal(plain.textContent, "Clean windows");
