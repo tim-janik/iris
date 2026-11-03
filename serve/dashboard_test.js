@@ -323,6 +323,43 @@ test("parses ordinary Markdown spellings of todo items", () => {
   ]);
 });
 
+test("every todo item gets a title, with or without markup", () => {
+  const items = (...bullets) => JSON.parse(JSON.stringify(dashboard.parseTodoLists(bullets.map((b) => "- " + b).join("\n"), "t")[0].items));
+  assert.deepEqual(items(
+    "title : body",
+    "title: body, more",
+    "**title** body",
+    "**title**, body",
+    "__title__ body",
+    "three word title",
+    "three word title rest body",
+    "short, then body, more",
+    "12:30 call the plumber",
+    "see https://example.com/x today",
+    "title:"
+  ), [
+    { title: "title", details: ["Body"] },
+    { title: "title", details: ["Body", "More"] },
+    { title: "title", details: ["Body"] },
+    { title: "title", details: ["Body"] },
+    { title: "title", details: ["Body"] },
+    { title: "three word title", details: [] },
+    { title: "three word title", details: ["Rest body"] },
+    { title: "short", details: ["Then body", "More"] },
+    { title: "12:30 call the", details: ["Plumber"] },
+    { title: "see https://example.com/x today", details: [] },
+    { title: "title", details: [] }
+  ]);
+});
+
+test("text under a nested bullet stays out of the parent", () => {
+  const text = ["## L", "- **A** : one", "  - nested", "    nested text", "  two", "- B"].join("\n");
+  assert.deepEqual(JSON.parse(JSON.stringify(dashboard.parseTodoLists(text, "t")[0].items)), [
+    { title: "A", details: ["One two"] },
+    { title: "B", details: [] }
+  ]);
+});
+
 test("only todo rows with details are collapsible", () => {
   const widget = fakeElement("div");
   dashboard.renderTodoLists(widget, [{ title: "House", items: [

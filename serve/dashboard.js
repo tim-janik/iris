@@ -486,12 +486,14 @@
   }
 
   // --- todo lists widget (.dashboard-widget with data-view="lists") ---
+  // Title sources, best first: strong markup, a colon, the first three words.
   function todoItem(text) {
-    var strong = /^(\*\*|__)(.+?):?\1\s*:?\s*(.*)$/.exec(text);
-    return {
-      title: strong ? strong[2] : text,
-      details: strong && strong[3] ? strong[3].split(/,\s+/).map(capitalized) : []
-    };
+    var match = /^\*\*(.+?):?\*\*[\s:,]*(.*)$/.exec(text) ||
+      /^__(.+?):?__[\s:,]*(.*)$/.exec(text) ||
+      /^(.+?)\s*:(?:\s+(.*))?$/.exec(text) ||
+      /^([^\s,]+(?:\s+[^\s,]+){0,2})[\s,]*(.*)$/.exec(text) ||
+      [text, text];
+    return { title: match[1], details: match[2] ? match[2].split(/,\s+/).map(capitalized) : [] };
   }
 
   function parseTodoLists(text, fallbackTitle) {
@@ -523,16 +525,21 @@
       }
       var bullet = /^( *)[-*+](\s+)(.+?)\s*$/.exec(line);
       if (bullet) {
-        if (open && bullet[1].length >= open.offset) return; // nested bullet
+        if (open && bullet[1].length >= open.offset) {
+          open.nested = bullet[1].length;
+          return;
+        }
         flush();
         if (!current) {
           current = { title: fallbackTitle, items: [] };
           lists.push(current);
         }
-        open = { text: bullet[3], offset: bullet[1].length + 1 + bullet[2].length };
+        open = { text: bullet[3], offset: bullet[1].length + 1 + bullet[2].length, nested: Infinity };
         return;
       }
-      if (open && /^\s+\S/.test(line)) open.text += " " + line.trim();
+      if (open && /^\s+\S/.test(line)) {
+        if (line.search(/\S/) <= open.nested) open.text += " " + line.trim();
+      }
       else if (line.trim()) flush();
     });
     flush();
