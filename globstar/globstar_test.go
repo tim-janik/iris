@@ -2,6 +2,7 @@
 package globstar
 
 import (
+	"path/filepath"
 	"testing"
 )
 
@@ -320,6 +321,29 @@ func TestFilterShouldIncludeNilMatchesHiddenPolicy(t *testing.T) {
 	}
 	if !filter.ShouldInclude("visible") {
 		t.Error("nil filter should include visible files")
+	}
+}
+
+func TestPatternMatchesBackslashName(t *testing.T) {
+	if filepath.Separator != '/' {
+		t.Skip("backslashes are path separators")
+	}
+	pattern, err := Compile("*.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pattern.Match(`a\b.md`) {
+		t.Error("pattern did not match a POSIX filename containing a backslash")
+	}
+}
+
+func TestPatternMatchesNativePath(t *testing.T) {
+	pattern, err := Compile(filepath.Join("docs", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pattern.Match(filepath.Join("docs", "page.md")) || !IsHidden(filepath.Join("docs", ".hidden")) {
+		t.Fatal("native path separators were not handled")
 	}
 }
 

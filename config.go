@@ -60,17 +60,29 @@ func defaultSiteConfig() SiteConfig {
 // If configFile is empty, returns default configuration without reading any file.
 // Fields not present in the file keep their default values.
 func loadSiteConfig(inputDir, configFile string) SiteConfig {
+	site, err := loadSiteConfigChecked(inputDir, configFile)
+	if err != nil {
+		log.Printf("failed to read config %s, using defaults: %v", configFile, err)
+		return defaultSiteConfig()
+	}
+	if configFile == "" {
+		log.Printf("no config file specified, using defaults")
+	} else {
+		log.Printf("loaded site config from %s", configFile)
+	}
+	return site
+}
+
+func loadSiteConfigChecked(inputDir, configFile string) (SiteConfig, error) {
 	site := defaultSiteConfig()
 
 	if configFile == "" {
-		log.Printf("no config file specified, using defaults")
-		return site
+		return site, nil
 	}
 
 	_, err := toml.DecodeFile(configFile, &site)
 	if err != nil {
-		log.Printf("failed to read config %s, using defaults: %v", configFile, err)
-		return defaultSiteConfig()
+		return SiteConfig{}, fmt.Errorf("parse %s: %w", configFile, err)
 	}
 	// Excerpt lengths must be positive; negative values would truncate to
 	// empty output, so fall back to the defaults instead.
@@ -83,8 +95,7 @@ func loadSiteConfig(inputDir, configFile string) SiteConfig {
 		log.Printf("config %s: desc_len %d is negative, using default %d", configFile, site.DescLen, def.DescLen)
 		site.DescLen = def.DescLen
 	}
-	log.Printf("loaded site config from %s", configFile)
-	return site
+	return site, nil
 }
 
 const defaultConfigPath = "_siteconfig.toml"
