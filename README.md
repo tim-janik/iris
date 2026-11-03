@@ -86,7 +86,7 @@ permissions. New entries respect the process umask.
 ## TODO dashboard
 
 Keep TODO lists in plain Markdown files. Each `##` heading starts a list, and each top-level bullet is a row.
-The title is the bold text, else the text before a `:`, else the first three words. The rest is the detail,
+The title is the bold or italic text, else the text before a `:`, else the first three words. The rest is the detail,
 and it shows as one collapsible line per comma. Nested bullets are subtasks, shown when the row is expanded.
 
 ```markdown

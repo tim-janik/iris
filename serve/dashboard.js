@@ -486,10 +486,12 @@
   }
 
   // --- todo lists widget (.dashboard-widget with data-view="lists") ---
-  // Title sources, best first: strong markup, a colon, the first three words.
+  // Title sources, best first: bold or italic markup, a colon, the first three words.
   function todoItem(text) {
     var match = /^\*\*(.+?):?\*\*[\s:,]*(.*)$/.exec(text) ||
       /^__(.+?):?__[\s:,]*(.*)$/.exec(text) ||
+      /^\*(.+?):?\*(?=[\s:,]|$)[\s:,]*(.*)$/.exec(text) ||
+      /^_(.+?):?_(?=[\s:,]|$)[\s:,]*(.*)$/.exec(text) ||
       /^(.+?)\s*:(?:\s+(.*))?$/.exec(text) ||
       /^([^\s,]+(?:\s+[^\s,]+){0,2})[\s,]*(.*)$/.exec(text) ||
       [text, text];
