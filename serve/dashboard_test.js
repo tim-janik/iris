@@ -404,3 +404,12 @@ test("only todo rows with details or subtasks are collapsible", () => {
   dashboard.renderTodoLists(widget, []);
   assert.equal(widget.childNodes[0].className, "dashboard-empty");
 });
+
+test("default styles go before everything else in head", () => {
+  const head = context.document.head;
+  head.prepend = (child) => head.childNodes.unshift(child);
+  head.appendChild(fakeElement("link"));
+  dashboard.ensureStyles();
+  assert.equal(head.childNodes[0].id, "iris-dashboard-style");
+  assert.equal(head.childNodes[1].tagName, "link");
+});

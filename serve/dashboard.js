@@ -368,7 +368,8 @@
     var style = document.createElement("style");
     style.id = "iris-dashboard-style";
     style.textContent = LOGIC_CSS + THEME_CSS;
-    document.head.appendChild(style);
+    // First in head, so site stylesheets override these defaults.
+    document.head.prepend(style);
   }
 
   // --- create-file form widget (form.dashboard-new) ---
@@ -708,6 +709,7 @@
     formFields: formFields,
     defaultDue: defaultDue,
     card: card,
+    ensureStyles: ensureStyles,
     capitalized: capitalized,
     firstValue: firstValue,
     estimateValue: estimateValue,
