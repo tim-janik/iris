@@ -5,13 +5,17 @@
 package serve
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
 	_ "embed"
 	"encoding/json"
 	"fmt"
 	htmplt "html/template"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -22,6 +26,7 @@ import (
 	"github.com/tim-janik/iris/frontmatter"
 	"github.com/tim-janik/iris/mimetype"
 	"github.com/tim-janik/iris/pandoc"
+	"github.com/tim-janik/iris/sourcepath"
 	"github.com/tim-janik/iris/templates"
 )
 
@@ -52,6 +57,8 @@ type Server struct {
 	Root string
 	// Port is the TCP port the server listens on.
 	Port int
+	// ListenHost is the host address the server listens on. Empty uses loopback.
+	ListenHost string
 	// PandocConfig controls pandoc invocation; zero value uses defaults.
 	PandocConfig pandoc.Config
 	// AdocConfig controls asciidoctor invocation; zero value uses defaults.
@@ -76,6 +83,44 @@ type Server struct {
 	HighlightScript []byte
 	HighlightStyle  []byte
 	MermaidScript   []byte
+	actionToken     string
+}
+
+func newActionToken() (string, error) {
+	data := make([]byte, 32)
+	if _, err := rand.Read(data); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", data), nil
+}
+
+func actionRequest(r *http.Request) bool {
+	return r.URL.Query().Get("cmd") == "create-file" || r.URL.Query().Has("edl")
+}
+
+func sameOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	return err == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "" &&
+		(u.Scheme == "http" || u.Scheme == "https") && u.Host == r.Host
+}
+
+func (s *Server) authorizedAction(r *http.Request) bool {
+	if s.actionToken == "" || !sameOrigin(r) {
+		return false
+	}
+	cookie, err := r.Cookie("iris-action-token")
+	return err == nil && subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(s.actionToken)) == 1
+}
+
+func (s *Server) setActionCookie(w http.ResponseWriter) {
+	if s.actionToken == "" {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: "iris-action-token", Value: s.actionToken, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
 }
 
 // normalizePath ensures the URL path starts with a slash.
@@ -189,7 +234,14 @@ func serveMetadata(w http.ResponseWriter, r *http.Request, root, urlPath string)
 		return
 	}
 
-	rootAbs, _ := filepath.Abs(root)
+	dirURL := strings.TrimSuffix(urlPath, "/..~meta~")
+	if dirURL == "" {
+		dirURL = "/"
+	}
+	dirURL = strings.TrimRight(dirURL, "/")
+	if dirURL == "" {
+		dirURL = "/"
+	}
 	objects := make([]map[string]any, 0)
 	for _, entry := range entries {
 		name := entry.Name()
@@ -206,11 +258,13 @@ func serveMetadata(w http.ResponseWriter, r *http.Request, root, urlPath string)
 			continue
 		}
 		fm, _ := frontmatter.Parse(data, name)
-		rel, relErr := filepath.Rel(rootAbs, filepath.Join(dir, name))
-		if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
+		cleanPath := strings.TrimSuffix(name, filepath.Ext(name))
+		if dirURL == "/" {
+			cleanPath = "/" + cleanPath
+		} else {
+			cleanPath = dirURL + "/" + cleanPath
 		}
-		cleanPath := "/" + strings.TrimSuffix(filepath.ToSlash(rel), filepath.Ext(rel))
+		cleanPath = templates.EncodeURLPath(cleanPath)
 		keywords := fm.Keywords
 		if keywords == nil {
 			keywords = []string{}
@@ -383,6 +437,13 @@ func (s *Server) servePageAsset(w http.ResponseWriter, r *http.Request, name str
 
 // Serve starts the HTTP server and blocks until the server exits or errors.
 func (s *Server) Handler() (http.Handler, error) {
+	if s.actionToken == "" {
+		var err error
+		s.actionToken, err = newActionToken()
+		if err != nil {
+			return nil, fmt.Errorf("create action token: %w", err)
+		}
+	}
 	if s.PandocConfig.InputFormat == "" {
 		s.PandocConfig = pandoc.DefaultConfig()
 	}
@@ -393,6 +454,10 @@ func (s *Server) Handler() (http.Handler, error) {
 	eng, err := templates.New(s.TemplateDir)
 	if err != nil {
 		return nil, fmt.Errorf("init templates: %w", err)
+	}
+	resolver, err := sourcepath.New(s.Root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve serve root: %w", err)
 	}
 
 	cfg := s.PandocConfig
@@ -428,8 +493,8 @@ func (s *Server) Handler() (http.Handler, error) {
 		// unless ?noredirect is set to request the raw source.
 		if ext := filepath.Ext(urlPath); ext == ".md" || ext == ".adoc" {
 			if !r.URL.Query().Has("noredirect") {
-				if _, err := os.Stat(filepath.Join(s.Root, urlPath)); err == nil {
-					target := strings.TrimSuffix(urlPath, ext)
+				if _, _, err := resolver.Resolve(urlPath, []string{""}); err == nil {
+					target := templates.EncodeURLPath(strings.TrimSuffix(urlPath, ext))
 					if target == "" {
 						target = "/"
 					}
@@ -443,22 +508,9 @@ func (s *Server) Handler() (http.Handler, error) {
 		// Try the path as-is first, then append .md, then .adoc.
 		// convertToHTML is true only when we found the file by appending an extension
 		// (i.e. the user requested /foo/bar and we resolved it to /foo/bar.md).
-		var absPath string
-		var found, convertToHTML bool
-		if info, err := os.Stat(filepath.Join(s.Root, urlPath)); err == nil && !info.IsDir() {
-			absPath = filepath.Join(s.Root, urlPath)
-			found = true
-		} else {
-			for _, ext := range []string{".md", ".adoc"} {
-				candidate := urlPath + ext
-				if _, err := os.Stat(filepath.Join(s.Root, candidate)); err == nil {
-					absPath = filepath.Join(s.Root, candidate)
-					found = true
-					convertToHTML = true
-					break
-				}
-			}
-		}
+		absPath, extension, err := resolver.Resolve(urlPath, []string{"", ".md", ".adoc"})
+		found := err == nil
+		convertToHTML := found && extension != ""
 
 		if !found {
 			log.Printf("[404] %s (not found)", urlPath)
@@ -506,9 +558,9 @@ func (s *Server) Handler() (http.Handler, error) {
 			return
 		}
 
-		// Parse the shared frontmatter model. A synthesized title is passed to
-		// pandoc only when the markdown body has no H1; otherwise the existing
-		// H1 supplies the title and a command-line title would duplicate it.
+		// Parse the shared frontmatter model. For markdown, pass a synthesized
+		// title to pandoc only when its body has no H1; otherwise its H1 supplies
+		// the title and a command-line title would duplicate it.
 		fm, body := frontmatter.Parse(data, filepath.Base(absPath))
 		if fm.TitleSynthesized && frontmatter.H1Title(body) != "" {
 			fm.Title = ""
@@ -526,6 +578,7 @@ func (s *Server) Handler() (http.Handler, error) {
 				http.Error(w, fmt.Sprintf("Internal Server Error: %v", convErr), http.StatusInternalServerError)
 				return
 			}
+			htmlStr = adoc.RemoveHighlightScripts(htmlStr)
 			bodyContent, convertedTitle, pageMermaid = pandoc.ExtractBodyAndTitle(htmlStr)
 		} else {
 			pandocTitle := ""
@@ -541,9 +594,9 @@ func (s *Server) Handler() (http.Handler, error) {
 			bodyContent, convertedTitle, pageMermaid = pandoc.ExtractBodyAndTitle(htmlStr)
 		}
 
-		// Resolve title: frontmatter > h1 from converter > filename (with extension)
+		// Resolve title: explicit frontmatter > converted title > filename.
 		title := fm.Title
-		if title == "" {
+		if title == "" || fm.TitleSynthesized {
 			title = convertedTitle
 		}
 		if title == "" {
@@ -573,9 +626,24 @@ func (s *Server) Handler() (http.Handler, error) {
 
 	handler := http.Handler(mux)
 	if s.EditLinkCmd != "" {
-		handler = editlink.Handler(editlink.Config{Cmd: s.EditLinkCmd}, mux, s.Root)
+		handler = editlink.Handler(editlink.Config{Cmd: s.EditLinkCmd, Token: s.actionToken}, mux, s.Root)
 	}
-	return handler, nil
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.setActionCookie(w)
+		if actionRequest(r) && !s.authorizedAction(r) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}), nil
+}
+
+func (s *Server) listenAddress() string {
+	host := s.ListenHost
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, fmt.Sprintf("%d", s.Port))
 }
 
 // Serve listens and serves until the server exits or errors.
@@ -584,8 +652,8 @@ func (s *Server) Serve() error {
 	if err != nil {
 		return err
 	}
-	addr := fmt.Sprintf(":%d", s.Port)
-	log.Printf("Serve running at http://localhost%s/", addr)
+	addr := s.listenAddress()
+	log.Printf("Serve running at http://%s/", addr)
 	log.Printf("Root: %s", s.Root)
 	return http.ListenAndServe(addr, handler)
 }

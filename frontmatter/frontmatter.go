@@ -46,7 +46,7 @@ func Parse(content []byte, sourceName ...string) (*Frontmatter, string) {
 		var doc yaml.Node
 		if err := yaml.Unmarshal([]byte(text[blockStart:blockEnd]), &doc); err == nil && len(doc.Content) > 0 {
 			root := doc.Content[0]
-			if root.Kind == yaml.MappingNode {
+			if root.Kind == yaml.MappingNode && bounded_yaml(root) {
 				readMapping(fm, root)
 			}
 		}
@@ -222,4 +222,32 @@ func nodeJSONValue(node *yaml.Node) any {
 		}
 	}
 	return node.Value
+}
+
+func bounded_yaml(root *yaml.Node) bool {
+	active := make(map[*yaml.Node]bool)
+	nodes_left, bytes_left := 10000, 1<<20
+	var visit func(*yaml.Node, int) bool
+	visit = func(node *yaml.Node, depth int) bool {
+		if node == nil || active[node] || depth > 100 || nodes_left <= 0 {
+			return false
+		}
+		nodes_left--
+		bytes_left -= len(node.Value)
+		if bytes_left < 0 {
+			return false
+		}
+		active[node] = true
+		defer delete(active, node)
+		if node.Kind == yaml.AliasNode {
+			return visit(node.Alias, depth+1)
+		}
+		for _, child := range node.Content {
+			if !visit(child, depth+1) {
+				return false
+			}
+		}
+		return true
+	}
+	return visit(root, 0)
 }

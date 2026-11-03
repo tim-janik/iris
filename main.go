@@ -47,7 +47,7 @@ Run "iris <subcommand> -h" for more information on a subcommand.
 Examples:
   iris index page1.md page2.md
 	Print markdown link lines suitable for index.md
-  iris serve ./docs --port 9454
+  iris serve --port 9454 ./docs
 	Serves all .md files under ./docs as rendered HTML on localhost:9454
 `)
 }
@@ -73,5 +73,3 @@ func printVersion() {
 		}
 	}
 }
-
-// ssgMain is the main entry point for the ssg subcommand.

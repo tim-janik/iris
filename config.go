@@ -87,8 +87,6 @@ func loadSiteConfig(inputDir, configFile string) SiteConfig {
 	return site
 }
 
-// renderPage renders a single InputPage to HTML using the appropriate template.
-
 const defaultConfigPath = "_siteconfig.toml"
 
 // initConfig writes a default config file to the given path.
@@ -162,6 +160,7 @@ func toTemplateSite(site SiteConfig) templates.SiteConfig {
 		Authors:     site.Authors,
 		Copyright:   site.Copyright,
 		FeedURL:     site.FeedURL,
+		CommentsEmail: site.CommentsEmail,
 		FeedAge:     site.FeedAge,
 		TeaserLen:   site.TeaserLen,
 		DescLen:     site.DescLen,

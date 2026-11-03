@@ -2,12 +2,12 @@
 package main
 
 import (
+	"fmt"
 	"html/template"
 	"log"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/tim-janik/iris/htmlutil"
@@ -18,8 +18,8 @@ func newFeedItem(pg *InputPage, siteURL string, siteTitle string, descLen int) t
 	excerpt := truncateExcerpt(stripTags(htmlutil.StripElements(pg.Rendered.Content, "figure")), descLen)
 	return templates.FeedItem{
 		Title:         pg.Front.Title,
-		URL:           siteURL + "/" + strings.TrimPrefix(cleanURL(pg.OutputPath), "/"),
-		LinkHref:      cleanURL(pg.OutputPath),
+		URL:           templates.JoinURLPath(siteURL, cleanURL(pg.OutputPath)),
+		LinkHref:      templates.EncodeURLPath(cleanURL(pg.OutputPath)),
 		PublishedDate: pg.PubDate,
 		ModifiedDate:  pg.ModDate,
 		Keywords:      pg.Front.Keywords,
@@ -32,7 +32,7 @@ func newFeedItem(pg *InputPage, siteURL string, siteTitle string, descLen int) t
 
 // generateFeeds creates RSS 2.0 and Atom feeds for all posts.
 // Returns sitemap entries for the feed files created.
-func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, siteGo templates.SiteConfig, outputDir string, now time.Time) []templates.SitemapEntry {
+func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, siteGo templates.SiteConfig, outputDir string, now time.Time) ([]templates.SitemapEntry, error) {
 	var sitemapEntries []templates.SitemapEntry
 	// Collect all posts sorted by published date (newest first)
 	var feedItems []templates.FeedItem
@@ -54,12 +54,20 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 		return feedItems[i].PublishedDate.After(feedItems[j].PublishedDate)
 	})
 
-	// Use newest page's published date for reproducible builds. Empty feeds
-	// fall back to the build time, so lastBuildDate/atom <updated>/sitemap
-	// lastmod never emit the zero time (year 0001).
-	lastBuild := now
-	if len(feedItems) > 0 {
-		lastBuild = feedItems[0].PublishedDate
+	// Use the newest entry change time for feed metadata. Empty feeds fall
+	// back to the build time, so generated dates never use the zero time.
+	var lastBuild time.Time
+	for _, item := range feedItems {
+		entryTime := item.ModifiedDate
+		if entryTime.IsZero() {
+			entryTime = item.PublishedDate
+		}
+		if entryTime.After(lastBuild) {
+			lastBuild = entryTime
+		}
+	}
+	if lastBuild.IsZero() {
+		lastBuild = now
 	}
 
 	// Helper to track successfully written feed files for sitemap
@@ -69,11 +77,11 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 	// the conventional feed paths below the site URL.
 	rssURL := site.FeedURL
 	if rssURL == "" {
-		rssURL = site.URL + "/rss2.xml"
+		rssURL = templates.JoinURLPath(site.URL, templates.RSSFeedPath)
 	}
 	atomURL := site.FeedURL
 	if atomURL == "" {
-		atomURL = site.URL + "/atom.xml"
+		atomURL = templates.JoinURLPath(site.URL, templates.AtomFeedPath)
 	}
 	// addFeedSitemapEntry records a written feed file for the sitemap. With a
 	// custom feed_url both feeds share one URL, which must be listed only once.
@@ -103,15 +111,13 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 	}
 	rssXML, err := eng.RenderRSS(rssData)
 	if err != nil {
-		log.Printf("render rss2: %v", err)
-	} else {
-		if err := os.WriteFile(filepath.Join(outputDir, "rss2.xml"), rssXML, 0644); err != nil {
-			log.Printf("write rss2.xml: %v", err)
-		} else {
-			log.Printf("  rss2 -> rss2.xml")
-			addFeedSitemapEntry(rssURL)
-		}
+		return nil, fmt.Errorf("render rss2: %w", err)
 	}
+	if err := os.WriteFile(filepath.Join(outputDir, templates.RSSFeedPath), rssXML, 0644); err != nil {
+		return nil, fmt.Errorf("write %s: %w", templates.RSSFeedPath, err)
+	}
+	log.Printf("  rss2 -> %s", templates.RSSFeedPath)
+	addFeedSitemapEntry(rssURL)
 
 	// Atom
 	atomData := templates.FeedData{
@@ -126,21 +132,12 @@ func generateFeeds(eng *templates.Engine, pages []*InputPage, site SiteConfig, s
 	}
 	atomXML, err := eng.RenderAtom(atomData)
 	if err != nil {
-		log.Printf("render atom: %v", err)
-	} else {
-		if err := os.WriteFile(filepath.Join(outputDir, "atom.xml"), atomXML, 0644); err != nil {
-			log.Printf("write atom.xml: %v", err)
-		} else {
-			log.Printf("  atom -> atom.xml")
-			addFeedSitemapEntry(atomURL)
-		}
+		return nil, fmt.Errorf("render atom: %w", err)
 	}
-	return sitemapEntries
+	if err := os.WriteFile(filepath.Join(outputDir, templates.AtomFeedPath), atomXML, 0644); err != nil {
+		return nil, fmt.Errorf("write %s: %w", templates.AtomFeedPath, err)
+	}
+	log.Printf("  atom -> %s", templates.AtomFeedPath)
+	addFeedSitemapEntry(atomURL)
+	return sitemapEntries, nil
 }
-
-// computePathInfo computes dirName, depth, and root for a relative file path.
-// Used for rendered pages (.md/.adoc) and static copies.
-// computeDirInfo returns metadata for a directory path (e.g. "2007" or "."):
-// dirName ("/2007/"), depth (path segments below the root) and root (the
-// relative path back to the site root). Shared by computePathInfo (files) and
-// computePathInfoForDir (auto-generated dirindex pages).

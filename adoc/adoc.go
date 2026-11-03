@@ -186,6 +186,26 @@ func ConvertAndDisassemble(cfg Config, adoc []byte) (*Result, error) {
 	return r, nil
 }
 
+// RemoveHighlightScripts strips highlight.js scripts before serve embeds a page.
+func RemoveHighlightScripts(htmlStr string) string {
+	doc, err := htmlutil.Parse(htmlStr)
+	if err != nil {
+		return htmlStr
+	}
+	htmlutil.RemoveAll(doc, func(node *html.Node) bool {
+		if node.Type != html.ElementNode || node.Data != "script" {
+			return false
+		}
+		src := htmlutil.GetAttr(node, "src")
+		if strings.Contains(src, "highlight.js/") && strings.Contains(src, "highlight.min.js") {
+			return true
+		}
+		text := htmlutil.Text(node)
+		return strings.Contains(text, "hljs.initHighlighting.called") && strings.Contains(text, "hljs.highlightBlock")
+	})
+	return htmlutil.Serialize(doc)
+}
+
 // extractTitle returns text from <title>.
 func extractTitle(doc *html.Node) string {
 	title := htmlutil.FindByTag(doc, "title")
@@ -217,7 +237,11 @@ func extractContent(doc *html.Node) string {
 	if h1 := htmlutil.FindByTag(content, "h1"); h1 != nil {
 		htmlutil.Remove(h1)
 	}
-	return strings.TrimSpace(htmlutil.InnerHTML(content))
+	result := strings.TrimSpace(htmlutil.InnerHTML(content))
+	if footnotes := htmlutil.FindByID(doc, "footnotes"); footnotes != nil && htmlutil.FindByID(content, "footnotes") == nil {
+		result += "\n" + htmlutil.Serialize(footnotes)
+	}
+	return strings.TrimSpace(result)
 }
 
 // extractFooter returns text from <div id="footer-text">.

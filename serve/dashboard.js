@@ -68,9 +68,7 @@
     return 0;
   }
 
-  // Priority order for sorting: high first, then medium, then low. Unknown
-  // priorities sort with the default (medium), matching how withDefaults()
-  // treats missing priorities and how statusRank() treats unknown statuses.
+  // Priorities sort from max to min, with unknown values between medium and low.
   function priorityRank(entry) {
     var priority = textValue(entry, "priority").trim().toLowerCase();
     if (priority === "max") return 1;

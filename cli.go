@@ -158,6 +158,7 @@ func parseInitArgs() string {
 type serveArgs struct {
 	root        string // directory containing markdown files
 	port        int    // TCP port to listen on
+	listenHost  string // host address to listen on
 	record      string // record serve responses under this directory, then exit
 	editLinkCmd string // command template for edit links (empty = disabled)
 	templateDir string // custom template directory (overrides embedded templates)
@@ -168,6 +169,7 @@ type serveArgs struct {
 func parseServeArgs() serveArgs {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	port := fs.Int("port", 9454, "TCP port to listen on (default: 9454)")
+	listenHost := fs.String("listen", "127.0.0.1", "host address to listen on (default: 127.0.0.1)")
 	record := fs.String("record", "", "record serve responses for all served files under root into this directory (cleared first) and exit")
 	editLinkCmd := fs.String("editlink", "", "command template to open source file in editor (empty = disabled); use %s for file path, %u for line number")
 	templateDir := fs.String("t", "", "custom template directory (overrides embedded templates)")
@@ -181,7 +183,7 @@ func parseServeArgs() serveArgs {
 	}
 
 	root, _ := filepath.Abs(args[0])
-	return serveArgs{root: root, port: *port, record: *record, editLinkCmd: *editLinkCmd, templateDir: *templateDir, faviconPath: *faviconPath}
+	return serveArgs{root: root, port: *port, listenHost: *listenHost, record: *record, editLinkCmd: *editLinkCmd, templateDir: *templateDir, faviconPath: *faviconPath}
 }
 
 // serveMain is the main entry point for the serve subcommand.
@@ -202,6 +204,7 @@ func serveMain() {
 	srv := &serve.Server{
 		Root:            args.root,
 		Port:            args.port,
+		ListenHost:      args.listenHost,
 		PandocConfig:    pandoc.DefaultConfig(),
 		AdocConfig:      adoc.DefaultConfig(),
 		EditLinkCmd:     args.editLinkCmd,
@@ -235,17 +238,11 @@ func serveMain() {
 // 2005/hello. Directories and non-passthrough files yield 404 in serve
 // mode and are not recorded. The outDir itself is excluded from the walk.
 func recordServe(handler http.Handler, root, outDir string) error {
-	rootAbs, err := filepath.Abs(root)
+	rootAbs, outAbs, err := validate_output_paths(root, outDir)
 	if err != nil {
 		return err
 	}
-	outAbs, err := filepath.Abs(outDir)
-	if err != nil {
-		return err
-	}
-	if outAbs == rootAbs || strings.HasPrefix(rootAbs, outAbs+string(os.PathSeparator)) {
-		return fmt.Errorf("record dir %s contains the input root %s", outDir, root)
-	}
+	root, outDir = rootAbs, outAbs
 	if err := os.RemoveAll(outAbs); err != nil {
 		return fmt.Errorf("clear record dir: %w", err)
 	}
@@ -288,15 +285,19 @@ func recordServe(handler http.Handler, root, outDir string) error {
 		req := httptest.NewRequest(http.MethodGet, (&url.URL{Path: urlPath}).String(), nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
+		if rec.Code >= http.StatusInternalServerError {
+			return fmt.Errorf("record %s: server returned %d", urlPath, rec.Code)
+		}
 		if rec.Code != http.StatusOK {
 			log.Printf("[%d] %s (not recorded)", rec.Code, urlPath)
 			return nil
 		}
-		outPath, err := url.PathUnescape(urlPath)
-		if err != nil {
-			return fmt.Errorf("unescape %s: %w", urlPath, err)
+		record_path := strings.TrimPrefix(urlPath, "/")
+		full := filepath.Join(outAbs, filepath.FromSlash(record_path))
+		record_rel, err := filepath.Rel(outAbs, full)
+		if err != nil || !filepath.IsLocal(record_rel) || record_rel == "." {
+			return fmt.Errorf("record path escapes output directory: %s", record_path)
 		}
-		full := filepath.Join(outDir, filepath.FromSlash(strings.TrimPrefix(outPath, "/")))
 		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
 			return err
 		}
@@ -335,13 +336,16 @@ func initEngine(templateDir string) *templates.Engine {
 	return eng
 }
 
-// toTemplateSite converts a SiteConfig to templates.SiteConfig.
-
 func ssgMain() {
 	args := parseSSGArgs()
 	log.Printf("Input:  %s", args.inputDir)
 	log.Printf("Output: %s", args.outputDir)
 
+	input_dir, output_dir, err := validate_output_paths(args.inputDir, args.outputDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+	args.inputDir, args.outputDir = input_dir, output_dir
 	prepareOutputDir(args.outputDir, args.clearOutput)
 	if err := templates.WriteAssets(args.outputDir, highlightScriptAsset, highlightStyleAsset, mermaidScriptAsset); err != nil {
 		log.Fatalf("write template assets: %v", err)
@@ -353,7 +357,7 @@ func ssgMain() {
 	// Default the template feed link (page <link rel="alternate">) to the RSS
 	// feed path when feed_url is unset; generateFeeds keeps site.FeedURL raw.
 	if siteGo.FeedURL == "" {
-		siteGo.FeedURL = site.URL + "/rss2.xml"
+		siteGo.FeedURL = templates.JoinURLPath(site.URL, templates.RSSFeedPath)
 	}
 
 	// Candidate files = union(include_glob, asset_glob); files matching neither are skipped
@@ -377,6 +381,9 @@ func ssgMain() {
 
 	// Sort so classification order is stable regardless of FS walk order
 	sort.Strings(allFiles)
+	if err := validateOutputCollisions(allFiles); err != nil {
+		log.Fatalf("output collision: %v", err)
+	}
 
 	// Unified parallel queue: process all files (convert+render for .md/.adoc,
 	// copy for static files, git dates for pageclass.PageCopy)
@@ -393,20 +400,27 @@ func ssgMain() {
 	}, pages)
 
 	// Render pages (only types that need template rendering)
-	renderAllPages(eng, pages, siteGo, args.outputDir)
+	if err := renderAllPages(eng, pages, siteGo, args.outputDir); err != nil {
+		log.Fatalf("render pages: %v", err)
+	}
 
 	// Generate directory indices (returns sitemap entries for each dirindex)
-	dirIndexEntries := generateDirIndices(eng, pages, siteGo, args.outputDir, args.now)
+	dirIndexEntries, err := generateDirIndices(eng, pages, siteGo, args.outputDir, args.now)
+	if err != nil {
+		log.Fatalf("generate directory indices: %v", err)
+	}
 
 	// Generate RSS and Atom feeds (returns sitemap entries for feed files)
-	feedEntries := generateFeeds(eng, pages, site, siteGo, args.outputDir, args.now)
+	feedEntries, err := generateFeeds(eng, pages, site, siteGo, args.outputDir, args.now)
+	if err != nil {
+		log.Fatalf("generate feeds: %v", err)
+	}
 
 	// Generate sitemap (after dirindices and feeds so all entries are known)
 	allExtra := append(dirIndexEntries, feedEntries...)
-	generateSitemap(eng, pages, site, args.outputDir, allExtra, args.now)
+	if err := generateSitemap(eng, pages, site, args.outputDir, allExtra, args.now); err != nil {
+		log.Fatalf("generate sitemap: %v", err)
+	}
 
 	log.Printf("Done. Output in %s", args.outputDir)
 }
-
-// loadCommentsForPages loads comments from .eml files and attaches them
-// to the corresponding InputPage structs.

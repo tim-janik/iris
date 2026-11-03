@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"io/fs"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,14 +94,13 @@ func walkFiles(inputDir, outputDir string, filter *globstar.Filter) ([]string, e
 		if rel == "." {
 			return nil
 		}
-		// Apply filter
-		if !filter.ShouldInclude(rel) {
-			if d.IsDir() {
+		if d.IsDir() {
+			if !filter.ShouldTraverse(rel) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if d.IsDir() {
+		if !filter.ShouldInclude(rel) {
 			return nil
 		}
 		files = append(files, rel)
@@ -109,16 +109,12 @@ func walkFiles(inputDir, outputDir string, filter *globstar.Filter) ([]string, e
 	return files, err
 }
 
-// processAllFiles is the unified parallel queue that handles all file types.
-// .md/.adoc files are converted via pandoc/asciidoctor, rendered, and written.
-// Static files are copied verbatim (with git dates for pageclass.PageCopy, without for pageclass.PageAsset).
-// Returns all InputPage entries (both rendered and copy types) for downstream use.
+// processAllFiles converts source files, copies static files, and returns pages in input order.
 func processAllFiles(paths []string, inputDir, outputDir string, workers int, assetMatcher *globstar.Matcher, eng *templates.Engine, siteGo templates.SiteConfig) ([]*InputPage, error) {
 	// Pre-allocate output slice to preserve order
 	pages := make([]*InputPage, len(paths))
 
-	// Process files concurrently, bounded by the worker count. The first
-	// error aborts the run; Wait returns it after all workers finish.
+	// All jobs run; Wait returns the first error after every worker finishes.
 	var g errgroup.Group
 	g.SetLimit(workers)
 	for idx, rel := range paths {
@@ -433,6 +429,16 @@ func renderPage(eng *templates.Engine, pg *InputPage, site templates.SiteConfig)
 	if len(authors) == 0 {
 		authors = site.Authors
 	}
+	commentHref := ""
+	if pg.Type.IsPost() && site.CommentsEmail != "" {
+		emailPath := strings.TrimSuffix(pg.DirName, "/") + "/" + pg.Stem
+		commentText := "Add comment to " + emailPath
+		query := url.Values{}
+		query.Set("subject", commentText)
+		query.Set("body", commentText+":\n\n")
+		commentHref = "mailto:" + fmt.Sprintf(site.CommentsEmail, computeLUID(pg.DirName+pg.Stem)) + "?" +
+			strings.ReplaceAll(query.Encode(), "+", "%20")
+	}
 
 	pageData := templates.TemplateData{
 		Site:           site,
@@ -454,14 +460,7 @@ func renderPage(eng *templates.Engine, pg *InputPage, site templates.SiteConfig)
 			LUID:           computeLUID(pg.DirName + pg.Stem),
 			EmailPath:      strings.TrimSuffix(pg.DirName, "/") + "/" + pg.Stem,
 			StylesheetHref: templates.ResolveStylesheet(site.Stylesheet, pg.Root),
-			CommentLink: template.HTML(fmt.Sprintf(
-				`<a href="mailto:newcomment+%s@testbit.eu?subject=Add%%20comment%%20to%%20%s&body=Add%%20comment%%20to%%20%s:%%0a%%0a"
-				   title="Send comment to publish via email, the email address itself is not published"
-				   >Post comment via email</a>`,
-				computeLUID(pg.DirName+pg.Stem),
-				strings.TrimSuffix(pg.DirName, "/")+"/"+pg.Stem,
-				strings.TrimSuffix(pg.DirName, "/")+"/"+pg.Stem,
-			)),
+			CommentHref:    commentHref,
 		},
 		Root:      pg.Root,
 		BodyClass: bodyClass,
@@ -505,7 +504,7 @@ func loadCommentsForPages(cfg MailboxConfig, pages []*InputPage) {
 }
 
 // renderAllPages renders each input page and writes the HTML output.
-func renderAllPages(eng *templates.Engine, pages []*InputPage, siteGo templates.SiteConfig, outputDir string) {
+func renderAllPages(eng *templates.Engine, pages []*InputPage, siteGo templates.SiteConfig, outputDir string) error {
 	for _, pg := range pages {
 		// Skip static files (pageclass.PageCopy, pageclass.PageAsset) — they are already copied
 		if !pg.Type.NeedsRender() {
@@ -513,23 +512,18 @@ func renderAllPages(eng *templates.Engine, pages []*InputPage, siteGo templates.
 		}
 		outPath := filepath.Join(outputDir, pg.OutputPath)
 		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-			log.Printf("  mkdir %s: %v", filepath.Dir(outPath), err)
-			continue
+			return fmt.Errorf("mkdir %s: %w", filepath.Dir(outPath), err)
 		}
 
 		html, err := renderPage(eng, pg, siteGo)
 		if err != nil {
-			log.Printf("  render %s: %v", pg.RelPath, err)
-			continue
+			return fmt.Errorf("render %s: %w", pg.RelPath, err)
 		}
 
 		if err := os.WriteFile(outPath, html, 0644); err != nil {
-			log.Printf("  write %s: %v", outPath, err)
-			continue
+			return fmt.Errorf("write %s: %w", outPath, err)
 		}
 		log.Printf("  %s -> %s", pg.RelPath, pg.OutputPath)
 	}
+	return nil
 }
-
-// generateDirIndices creates index.html files for each directory containing posts.
-// Returns sitemap entries for each dirindex page created.

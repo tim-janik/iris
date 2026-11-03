@@ -107,7 +107,10 @@ func TestGenerateDirIndices_RootIndexNotOverwritten(t *testing.T) {
 		testInputPage(t, "2024/alpha.md", "Alpha", pageclass.PagePost),
 	}
 	siteGo := templates.SiteConfig{URL: "https://example.com", Title: "Site"}
-	entries := generateDirIndices(eng, pages, siteGo, outDir, now)
+	entries, err := generateDirIndices(eng, pages, siteGo, outDir, now)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if data := readTestFile(t, rootIndex); data != "RENDERED-ROOT-INDEX" {
 		t.Errorf("root index.html was overwritten by the auto dirindex: %q", data)
@@ -134,7 +137,10 @@ func TestGenerateDirIndices_ExactDirectoryFilter(t *testing.T) {
 		testInputPage(t, "2025/gamma.md", "Gamma", pageclass.PagePost),
 	}
 	siteGo := templates.SiteConfig{URL: "https://example.com", Title: "Site"}
-	entries := generateDirIndices(eng, pages, siteGo, outDir, now)
+	entries, err := generateDirIndices(eng, pages, siteGo, outDir, now)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	assertFileContains(t, filepath.Join(outDir, "2024", "index.html"), "Alpha")
 	assertFileNotContains(t, filepath.Join(outDir, "2024", "index.html"), "Beta")
@@ -176,7 +182,10 @@ func TestGenerateFeeds_LastBuildFallbackToNow(t *testing.T) {
 	site := SiteConfig{URL: "https://example.com", Title: "Site"}
 	siteGo := templates.SiteConfig{URL: site.URL, Title: site.Title}
 
-	entries := generateFeeds(eng, nil, site, siteGo, outDir, now)
+	entries, err := generateFeeds(eng, nil, site, siteGo, outDir, now)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, name := range []string{"rss2.xml", "atom.xml"} {
 		out := readTestFile(t, filepath.Join(outDir, name))
@@ -207,7 +216,10 @@ func TestGenerateFeeds_FeedURL(t *testing.T) {
 		outDir := t.TempDir()
 		site := SiteConfig{URL: "https://example.com", Title: "Site", FeedURL: "https://example.com/custom/feed.xml"}
 		siteGo := templates.SiteConfig{URL: site.URL, Title: site.Title}
-		entries := generateFeeds(eng, pages, site, siteGo, outDir, now)
+		entries, err := generateFeeds(eng, pages, site, siteGo, outDir, now)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		assertFileContains(t, filepath.Join(outDir, "rss2.xml"),
 			`<atom:link rel="self" type="application/rss+xml" href="https://example.com/custom/feed.xml"/>`)
@@ -228,7 +240,10 @@ func TestGenerateFeeds_FeedURL(t *testing.T) {
 		outDir := t.TempDir()
 		site := SiteConfig{URL: "https://example.com", Title: "Site"}
 		siteGo := templates.SiteConfig{URL: site.URL, Title: site.Title}
-		entries := generateFeeds(eng, pages, site, siteGo, outDir, now)
+		entries, err := generateFeeds(eng, pages, site, siteGo, outDir, now)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		assertFileContains(t, filepath.Join(outDir, "rss2.xml"),
 			`href="https://example.com/rss2.xml"`)

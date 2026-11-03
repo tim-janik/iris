@@ -82,6 +82,30 @@ func TestResolveStylesheetMixedCaseURL(t *testing.T) {
 	}
 }
 
+func TestURLPathHelpers(t *testing.T) {
+	if got := EncodeURLPath(`notes\page#x`); got != "notes/page%23x" {
+		t.Fatalf("EncodeURLPath() = %q", got)
+	}
+	if got := JoinURLPath("https://example.com/site/", "/notes/page#x"); got != "https://example.com/site/notes/page%23x" {
+		t.Fatalf("JoinURLPath() = %q", got)
+	}
+}
+
+func TestRenderAtomURLJoinEscapesConfiguredPaths(t *testing.T) {
+	eng := mustNewEngine(t)
+	xml, err := eng.RenderAtom(FeedData{Site: SiteConfig{
+		URL:      "https://example.com/site/",
+		IconHref: "icons/icon#x.svg",
+		LogoHref: "images/logo?dark.svg",
+	}})
+	if err != nil {
+		t.Fatalf("RenderAtom(): %v", err)
+	}
+	out := string(xml)
+	assertContains(t, out, "<icon>https://example.com/site/icons/icon%23x.svg</icon>")
+	assertContains(t, out, "<logo>https://example.com/site/images/logo%3Fdark.svg</logo>")
+}
+
 func TestRenderServeStylesheetHref(t *testing.T) {
 	eng := mustNewEngine(t)
 	html, err := eng.RenderServe(ServeData{StylesheetHref: "../assets/site.css"})

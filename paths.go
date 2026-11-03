@@ -30,9 +30,7 @@ func computePathInfo(rel string) (dirName string, depth int, root string) {
 	return
 }
 
-// computePathInfoForDir is like computePathInfo but takes a directory path
-// directly (not a file path). Used for auto-generated dirindex pages.
-// Depth starts at 0 for root and root uses ".." (no trailing slash).
+// computePathInfoForDir returns directory metadata; the site root has depth 0 and root ".".
 func computePathInfoForDir(dir string) (dirName string, depth int, root string) {
 	return computeDirInfo(dir)
 }

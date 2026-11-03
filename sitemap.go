@@ -17,7 +17,7 @@ import (
 	"github.com/tim-janik/iris/templates"
 )
 
-func generateDirIndices(eng *templates.Engine, pages []*InputPage, siteGo templates.SiteConfig, outputDir string, now time.Time) []templates.SitemapEntry {
+func generateDirIndices(eng *templates.Engine, pages []*InputPage, siteGo templates.SiteConfig, outputDir string, now time.Time) ([]templates.SitemapEntry, error) {
 	var sitemapEntries []templates.SitemapEntry
 	dirs := findDirs(pages)
 	for _, dir := range dirs {
@@ -50,7 +50,7 @@ func generateDirIndices(eng *templates.Engine, pages []*InputPage, siteGo templa
 				linkHref = strings.TrimPrefix(linkHref, dir+"/")
 			}
 			fi := newFeedItem(pg, siteGo.URL, siteGo.Title, siteGo.DescLen)
-			fi.LinkHref = linkHref
+			fi.LinkHref = templates.EncodeURLPath(linkHref)
 			feedItems = append(feedItems, fi)
 		}
 
@@ -86,18 +86,15 @@ func generateDirIndices(eng *templates.Engine, pages []*InputPage, siteGo templa
 			html, renderErr = eng.RenderDirIndex(pageData)
 		}
 		if renderErr != nil {
-			log.Printf("  render dirindex %s: %v", indexPath, renderErr)
-			continue
+			return nil, fmt.Errorf("render dirindex %s: %w", indexPath, renderErr)
 		}
 
 		outPath := filepath.Join(outputDir, indexPath)
 		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-			log.Printf("  mkdir %s: %v", filepath.Dir(outPath), err)
-			continue
+			return nil, fmt.Errorf("mkdir %s: %w", filepath.Dir(outPath), err)
 		}
 		if err := os.WriteFile(outPath, html, 0644); err != nil {
-			log.Printf("  write %s: %v", outPath, err)
-			continue
+			return nil, fmt.Errorf("write %s: %w", outPath, err)
 		}
 		log.Printf("  dirindex -> %s", indexPath)
 
@@ -112,7 +109,7 @@ func generateDirIndices(eng *templates.Engine, pages []*InputPage, siteGo templa
 		if dirModDate.IsZero() {
 			dirModDate = now
 		}
-		loc := siteGo.URL + "/" + strings.TrimPrefix(strings.TrimPrefix(cleanURL(indexPath), "/"), "./")
+		loc := templates.JoinURLPath(siteGo.URL, strings.TrimPrefix(strings.TrimPrefix(cleanURL(indexPath), "/"), "./"))
 		sitemapEntries = append(sitemapEntries, templates.SitemapEntry{
 			Loc:        loc,
 			Priority:   calcPriorityForPath(loc, depth),
@@ -120,12 +117,12 @@ func generateDirIndices(eng *templates.Engine, pages []*InputPage, siteGo templa
 			LastMod:    dirModDate.Format(dateLayout),
 		})
 	}
-	return sitemapEntries
+	return sitemapEntries, nil
 }
 
 // generateSitemap creates sitemap.xml for all pages.
 // extraEntries are additional sitemap entries (e.g. dirindex, feeds) not derived from InputPage.
-func generateSitemap(eng *templates.Engine, pages []*InputPage, site SiteConfig, outputDir string, extraEntries []templates.SitemapEntry, now time.Time) {
+func generateSitemap(eng *templates.Engine, pages []*InputPage, site SiteConfig, outputDir string, extraEntries []templates.SitemapEntry, now time.Time) error {
 	var entries []templates.SitemapEntry
 	for _, pg := range pages {
 		// Only include pages that need sitemap entries AND are web files (HTML)
@@ -143,7 +140,7 @@ func generateSitemap(eng *templates.Engine, pages []*InputPage, site SiteConfig,
 		} else {
 			urlPath = cleanURL(pg.OutputPath)
 		}
-		loc := site.URL + "/" + strings.TrimPrefix(urlPath, "/")
+		loc := templates.JoinURLPath(site.URL, urlPath)
 		entries = append(entries, templates.SitemapEntry{
 			Loc:        loc,
 			Priority:   calcPriority(pg, loc, now),
@@ -156,14 +153,13 @@ func generateSitemap(eng *templates.Engine, pages []*InputPage, site SiteConfig,
 
 	xml, err := eng.RenderSitemap(templates.SitemapData{Pages: entries})
 	if err != nil {
-		log.Printf("render sitemap: %v", err)
-		return
+		return fmt.Errorf("render sitemap: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(outputDir, "sitemap.xml"), xml, 0644); err != nil {
-		log.Printf("write sitemap.xml: %v", err)
-	} else {
-		log.Printf("  sitemap -> sitemap.xml")
+	if err := os.WriteFile(filepath.Join(outputDir, templates.SitemapPath), xml, 0644); err != nil {
+		return fmt.Errorf("write %s: %w", templates.SitemapPath, err)
 	}
+	log.Printf("  sitemap -> %s", templates.SitemapPath)
+	return nil
 }
 
 // calcChangefreq determines sitemap change frequency based on modification age.
@@ -208,7 +204,7 @@ func specialScore(loc string) int {
 	if u, err := url.Parse(loc); err == nil && u.Path != "" {
 		path = u.Path
 	}
-	if path == "/sitemap.xml" || path == "/index.html" || path == "/index.htm" || path == "/" {
+	if path == "/"+templates.SitemapPath || path == "/index.html" || path == "/index.htm" || path == "/" {
 		return +10
 	}
 	if strings.Contains(path, "/index.htm") {
@@ -282,5 +278,3 @@ func formatPriority(raw int) string {
 func daysSince(t, now time.Time) int {
 	return int(now.Sub(t).Hours() / 24)
 }
-
-// newFeedItem creates a FeedItem from an InputPage.

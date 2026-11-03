@@ -2,29 +2,27 @@ package editlink
 
 import (
 	"bytes"
+	"crypto/hmac"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/tim-janik/iris/sourcepath"
 )
 
 // resolveSourcePath resolves the absolute path to the source file for a given
 // URL path and source root directory.
 func resolveSourcePath(urlPath, srcRoot string) string {
-	if !strings.HasPrefix(urlPath, "/") {
-		urlPath = "/" + urlPath
+	resolver, err := sourcepath.New(srcRoot)
+	if err != nil {
+		return ""
 	}
-
-	for _, ext := range []string{"", ".md", ".adoc"} {
-		candidate := filepath.Join(srcRoot, urlPath+ext)
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate
-		}
+	path, _, err := resolver.Resolve(urlPath, []string{"", ".md", ".adoc"})
+	if err != nil {
+		return ""
 	}
-
-	return ""
+	return path
 }
 
 // handleEditQuery checks if the request has an "edl" query parameter.
@@ -34,6 +32,17 @@ func handleEditQuery(cfg Config, w http.ResponseWriter, r *http.Request, srcPath
 	edlStr := r.URL.Query().Get("edl")
 	if edlStr == "" {
 		return false
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return true
+	}
+	if cfg.Token != "" {
+		cookie, err := r.Cookie("iris-action-token")
+		if err != nil || !hmac.Equal([]byte(cookie.Value), []byte(cfg.Token)) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return true
+		}
 	}
 
 	lineNum, err := strconv.Atoi(edlStr)
