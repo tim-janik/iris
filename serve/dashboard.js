@@ -571,7 +571,7 @@
 
   function parseTodoLists(text, fallbackTitle) {
     var parsed = splitFrontmatter(text);
-    var lines = parsed ? parsed.rest : String(text).split("\n");
+    var lines = parsed ? parsed.rest : String(text).replace(/^\uFEFF/, "").split("\n");
     var lists = [];
     var current = null;
     var open = null; // bullet being collected: { text, offset }
@@ -586,10 +586,10 @@
     }
     lines.forEach(function (rawLine) {
       var line = rawLine.replace(/\t/g, "    ");
-      var marker = /^\s*(`{3,}|~{3,})/.exec(line);
+      var marker = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
       if (marker) {
-        if (!fence) fence = marker[1].charAt(0);
-        else if (fence === marker[1].charAt(0)) fence = null;
+        if (!fence) fence = marker[1];
+        else if (marker[1].indexOf(fence) === 0 && !marker[2].trim()) fence = null;
         return;
       }
       if (fence) return;
@@ -600,7 +600,8 @@
         lists.push(current);
         return;
       }
-      var bullet = /^( *)[-*+](\s+)(.+?)\s*$/.exec(line);
+      var rule = /^\s*([-*])(\s*\1){2,}\s*$/.test(line);
+      var bullet = !rule && /^( *)[-*+](\s+)(.+?)\s*$/.exec(line);
       if (bullet) {
         var indent = bullet[1].length;
         if (open && indent >= open.offset) {
@@ -609,6 +610,7 @@
           open.levels.push(indent);
           return;
         }
+        if (indent > 3) return; // indented code block
         flush();
         if (!current) {
           current = { title: fallbackTitle, items: [] };
@@ -650,11 +652,15 @@
 
   function renderTodoLists(widget, lists) {
     if (!lists.length) {
-      widget.replaceChildren(node("p", "No todo lists found.", "dashboard-empty"));
+      widget.replaceChildren(node("p", "No todo lists found, check data-files.", "dashboard-empty"));
       return;
     }
     var grid = node("div", undefined, "dashboard-lists");
     lists.forEach(function (list) {
+      if (list.error) {
+        grid.appendChild(node("p", "Unavailable: " + list.error, "dashboard-error"));
+        return;
+      }
       var section = node("section", undefined, "dashboard-list");
       section.appendChild(node("h2", list.title));
       var rows = node("ul");
@@ -683,16 +689,12 @@
     var files = (widget.getAttribute("data-files") || "").split(",").map(function (file) {
       return file.trim();
     }).filter(Boolean);
-    Promise.all(files.map(fetchTodoLists))
-      .then(function (results) {
-        renderTodoLists(widget, [].concat.apply([], results));
-      })
-      .catch(function (error) {
-        widget.replaceChildren(node("p", "Dashboard unavailable: " + error.message, "dashboard-error"));
-      })
-      .finally(function () {
-        widget.removeAttribute("aria-busy");
-      });
+    return Promise.all(files.map(function (file) {
+      return fetchTodoLists(file).catch(function (error) { return [{ error: error.message }]; });
+    })).then(function (results) {
+      renderTodoLists(widget, [].concat.apply([], results));
+      widget.removeAttribute("aria-busy");
+    });
   }
 
   var api = {
@@ -716,7 +718,8 @@
     dueStatus: dueStatus,
     reloadAfterCreate: reloadAfterCreate,
     parseTodoLists: parseTodoLists,
-    renderTodoLists: renderTodoLists
+    renderTodoLists: renderTodoLists,
+    loadTodoLists: loadTodoLists
   };
   if (global) global.IrisDashboard = api;
 

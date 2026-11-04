@@ -16,6 +16,7 @@ function fakeElement(tag) {
     childNodes: [],
     setAttribute() {},
     appendChild(child) { this.childNodes.push(child); return child; },
+    prepend(child) { this.childNodes.unshift(child); },
     replaceChildren(...children) { this.childNodes = children; }
   };
 }
@@ -384,6 +385,34 @@ test("nested bullets become subtasks with their depth", () => {
   ]);
 });
 
+test("skips what only looks like a todo item", () => {
+  const titles = (lines) => dashboard.parseTodoLists(lines.join("\n"), "fallback").map((list) => [list.title, list.items.map((i) => i.title)]);
+  assert.deepEqual(JSON.parse(JSON.stringify(titles(["\uFEFF## Bom", "- a"]))), [["Bom", ["a"]]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(titles(["## L", "````", "```", "- fenced", "```", "````", "- a"]))), [["L", ["a"]]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(titles(["## L", "```", "```js", "- fenced", "```", "- a"]))), [["L", ["a"]]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(titles(["## L", "- a", "- - -", "* * *", "- b"]))), [["L", ["a", "b"]]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(titles(["## L", "Notes:", "", "    - code", "- a"]))), [["L", ["a"]]]);
+});
+
+test("loads raw todo files and keeps the others when one fails", async () => {
+  const urls = [];
+  context.fetch = (url) => {
+    urls.push(url);
+    if (url.startsWith("missing")) return Promise.resolve({ ok: false, status: 404 });
+    return Promise.resolve({ ok: true, text: () => Promise.resolve("## Garden\n- a\n") });
+  };
+  const widget = fakeElement("div");
+  widget.getAttribute = () => "my todos/a#1.md, missing.md";
+  widget.removeAttribute = (name) => { widget.removed = name; };
+  await dashboard.loadTodoLists(widget);
+  assert.deepEqual(urls, ["my%20todos/a%231.md?noredirect", "missing.md?noredirect"]);
+  const [list, error] = widget.childNodes[0].childNodes;
+  assert.equal(list.childNodes[0].textContent, "Garden");
+  assert.equal(error.className, "dashboard-error");
+  assert.equal(error.textContent, "Unavailable: missing.md (404)");
+  assert.equal(widget.removed, "aria-busy");
+});
+
 test("only todo rows with details or subtasks are collapsible", () => {
   const widget = fakeElement("div");
   dashboard.renderTodoLists(widget, [{ title: "House", items: [
@@ -406,8 +435,7 @@ test("only todo rows with details or subtasks are collapsible", () => {
 });
 
 test("default styles go before everything else in head", () => {
-  const head = context.document.head;
-  head.prepend = (child) => head.childNodes.unshift(child);
+  const head = context.document.head = fakeElement("head");
   head.appendChild(fakeElement("link"));
   dashboard.ensureStyles();
   assert.equal(head.childNodes[0].id, "iris-dashboard-style");
