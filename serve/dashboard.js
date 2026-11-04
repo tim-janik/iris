@@ -273,8 +273,12 @@
     widget.replaceChildren(list);
   }
 
+  function widgetView(widget) {
+    return (widget.getAttribute("data-view") || "cards").trim().toLowerCase();
+  }
+
   function render(widget, entries) {
-    var view = (widget.getAttribute("data-view") || "cards").trim().toLowerCase();
+    var view = widgetView(widget);
     if (view !== "cards") {
       widget.replaceChildren(node("p", "Unsupported dashboard view: " + view, "dashboard-error"));
       return;
@@ -289,12 +293,83 @@
     renderCards(widget, visible, result.omitted);
   }
 
+  // Layout and behavior the widgets need to work under any theme.
+  var LOGIC_CSS = `
+    .dashboard-card-line { display: flex; align-items: baseline; }
+    .dashboard-metadata { display: flex; align-items: baseline; }
+    .dashboard-field::after { content: "\\00b7"; }
+    .dashboard-field:last-child::after { content: ""; }
+
+    .dashboard-new .dashboard-new-name { display: flex; align-items: baseline; }
+    .dashboard-new .dashboard-new-fields { display: grid; grid-template-columns: repeat(auto-fill,minmax(13em,1fr)); }
+    .dashboard-new label { display: flex; flex-direction: column; }
+    .dashboard-new textarea { width: 100%; box-sizing: border-box; }
+
+    .dashboard-lists {
+      display: grid;
+      grid-template-columns: repeat(auto-fill,minmax(min(18em,100%),1fr));
+      align-items: start;
+    }
+    .dashboard-list ul { list-style: none; }
+    .dashboard-list summary {
+      display: flex;
+      justify-content: space-between;
+      cursor: pointer;
+      list-style: none;
+    }
+    .dashboard-list summary::-webkit-details-marker { display: none; }
+    .dashboard-list summary::after { content: "\\25b8"; }
+    .dashboard-list details[open]>summary::after { content: "\\25be"; }
+    .dashboard-todo-subtask::before { content: "\\2022\\00a0"; }
+  `;
+
+  // Colors, borders, spacing and type, free to change with the theme.
+  var THEME_CSS = `
+    .dashboard-card-line { gap: .45em; }
+    .dashboard-status { font-size: 1.1em; color: #777; }
+    .dashboard-status--open { color: #668; }
+    .dashboard-status--in-progress, .dashboard-status--in_progress { color: #a76; }
+    .dashboard-status--done, .dashboard-status--complete { color: #686; }
+    .dashboard-metadata { color: #777; font-size: .9em; }
+    .dashboard-field::after { margin: 0 .5em; }
+    .dashboard-field:last-child::after { margin: 0; }
+    .dashboard-field--due-soon { color: #a57400; }
+    .dashboard-field--due-overdue { color: #b33; }
+    .dashboard-description { margin: .2em 0 0; }
+    .dashboard-others { margin: 0; color: #777; font-style: italic; }
+
+    .dashboard-new fieldset { border: 1px solid #ccc; border-radius: 6px; margin: 1em 0; padding: .75em 1em; }
+    .dashboard-new legend { font-weight: bold; }
+    .dashboard-new .dashboard-new-name { gap: .4em; }
+    .dashboard-new .dashboard-new-suffix { color: #999; }
+    .dashboard-new .dashboard-new-fields { gap: .6em 1.2em; margin: 1em 0; }
+    .dashboard-new label { gap: .15em; font-size: .9em; color: #555; }
+    .dashboard-new input[type=text],
+    .dashboard-new input[type=date],
+    .dashboard-new select,
+    .dashboard-new textarea { padding: .3em .4em; border: 1px solid #ccc; border-radius: 4px; font: inherit; color: #222; }
+    .dashboard-new button { margin-top: .6em; padding: .4em 1.1em; }
+    .dashboard-new .dashboard-new-status { color: #777; font-size: .9em; margin-left: .6em; }
+    .dashboard-new .dashboard-new-status.dashboard-error { color: #a33; }
+    .dashboard-new .dashboard-new-reload { background: #fff; color: #555; border: 1px solid #aaa; }
+    .dashboard-new .dashboard-new-reload:hover { background: #f2f2f2; }
+
+    .dashboard-lists { gap: 1em; }
+    .dashboard-list { border: 1px solid #ccc; border-radius: 6px; }
+    .dashboard-list h2 { margin: 0; padding: .4em .75em; font-size: 1.1em; border-bottom: 1px solid #ccc; }
+    .dashboard-list ul { margin: 0; padding: .3em 0; }
+    .dashboard-list li { margin: 0; padding: .2em .75em; }
+    .dashboard-list summary { gap: .5em; }
+    .dashboard-todo-detail { padding-left: 1em; color: #555; font-size: .9em; }
+  `;
+
   function ensureStyles() {
     if (document.getElementById("iris-dashboard-style")) return;
     var style = document.createElement("style");
     style.id = "iris-dashboard-style";
-    style.textContent = ".dashboard-card-line{display:flex;gap:.45em;align-items:baseline}.dashboard-status{font-size:1.1em;color:#777}.dashboard-status--open{color:#668}.dashboard-status--in-progress,.dashboard-status--in_progress{color:#a76}.dashboard-status--done,.dashboard-status--complete{color:#686}.dashboard-metadata{display:flex;align-items:baseline;color:#777;font-size:.9em}.dashboard-field::after{content:\"\\00b7\";margin:0 .5em}.dashboard-field:last-child::after{content:\"\";margin:0}.dashboard-field--due-soon{color:#a57400}.dashboard-field--due-overdue{color:#b33}.dashboard-description{margin:.2em 0 0}.dashboard-others{margin:0;color:#777;font-style:italic}" + ".dashboard-new fieldset{border:1px solid #ccc;border-radius:6px;margin:1em 0;padding:.75em 1em}.dashboard-new legend{font-weight:bold}.dashboard-new .dashboard-new-name{display:flex;align-items:baseline;gap:.4em}.dashboard-new .dashboard-new-suffix{color:#999}.dashboard-new .dashboard-new-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13em,1fr));gap:.6em 1.2em;margin:1em 0}.dashboard-new label{display:flex;flex-direction:column;gap:.15em;font-size:.9em;color:#555}.dashboard-new input[type=text],.dashboard-new input[type=date],.dashboard-new select,.dashboard-new textarea{padding:.3em .4em;border:1px solid #ccc;border-radius:4px;font:inherit;color:#222}.dashboard-new textarea{width:100%;box-sizing:border-box}.dashboard-new button{margin-top:.6em;padding:.4em 1.1em}.dashboard-new .dashboard-new-status{color:#777;font-size:.9em;margin-left:.6em}.dashboard-new .dashboard-new-status.dashboard-error{color:#a33}.dashboard-new .dashboard-new-reload{background:#fff;color:#555;border:1px solid #aaa}.dashboard-new .dashboard-new-reload:hover{background:#f2f2f2}";
-    document.head.appendChild(style);
+    style.textContent = LOGIC_CSS + THEME_CSS;
+    // First in head, so site stylesheets override these defaults.
+    document.head.prepend(style);
   }
 
   // --- create-file form widget (form.dashboard-new) ---
@@ -481,6 +556,147 @@
       });
   }
 
+  // --- todo lists widget (.dashboard-widget with data-view="lists") ---
+  // Title sources, best first: bold or italic markup, a colon, the first three words.
+  function todoItem(text) {
+    var match = /^\*\*(.+?):?\*\*[\s:,]*(.*)$/.exec(text) ||
+      /^__(.+?):?__[\s:,]*(.*)$/.exec(text) ||
+      /^\*(.+?):?\*(?=[\s:,]|$)[\s:,]*(.*)$/.exec(text) ||
+      /^_(.+?):?_(?=[\s:,]|$)[\s:,]*(.*)$/.exec(text) ||
+      /^(.+?)\s*:(?:\s+(.*))?$/.exec(text) ||
+      /^([^\s,]+(?:\s+[^\s,]+){0,2})[\s,]*(.*)$/.exec(text) ||
+      [text, text];
+    return { title: match[1], details: match[2] ? match[2].split(/,\s+/).map(capitalized) : [] };
+  }
+
+  function parseTodoLists(text, fallbackTitle) {
+    var parsed = splitFrontmatter(text);
+    var lines = parsed ? parsed.rest : String(text).replace(/^\uFEFF/, "").split("\n");
+    var lists = [];
+    var current = null;
+    var open = null; // bullet being collected: { text, offset }
+    var fence = null;
+    function flush() {
+      if (open) {
+        var item = todoItem(open.text);
+        item.subtasks = open.subtasks;
+        current.items.push(item);
+      }
+      open = null;
+    }
+    lines.forEach(function (rawLine) {
+      var line = rawLine.replace(/\t/g, "    ");
+      var marker = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+      if (marker) {
+        if (!fence) fence = marker[1];
+        else if (marker[1].indexOf(fence) === 0 && !marker[2].trim()) fence = null;
+        return;
+      }
+      if (fence) return;
+      var heading = /^##\s+(.+?)\s*$/.exec(line);
+      if (heading) {
+        flush();
+        current = { title: heading[1], items: [] };
+        lists.push(current);
+        return;
+      }
+      var rule = /^\s*([-*])(\s*\1){2,}\s*$/.test(line);
+      var bullet = !rule && /^( *)[-*+](\s+)(.+?)\s*$/.exec(line);
+      if (bullet) {
+        var indent = bullet[1].length;
+        if (open && indent >= open.offset) {
+          while (open.levels.length && open.levels[open.levels.length - 1] >= indent) open.levels.pop();
+          open.subtasks.push({ text: bullet[3], depth: open.levels.length });
+          open.levels.push(indent);
+          return;
+        }
+        if (indent > 3) return; // indented code block
+        flush();
+        if (!current) {
+          current = { title: fallbackTitle, items: [] };
+          lists.push(current);
+        }
+        open = { text: bullet[3], offset: indent + 1 + bullet[2].length, subtasks: [], levels: [] };
+        return;
+      }
+      if (open && /^\s+\S/.test(line)) {
+        // Text indented past the latest subtask's bullet continues that subtask.
+        if (open.levels.length && line.search(/\S/) > open.levels[open.levels.length - 1]) {
+          open.subtasks[open.subtasks.length - 1].text += " " + line.trim();
+        } else {
+          open.text += " " + line.trim();
+        }
+      }
+      else if (line.trim()) flush();
+    });
+    flush();
+    return lists;
+  }
+
+  function todoRow(item) {
+    if (!item.details.length && !item.subtasks.length) return node("li", item.title);
+    var details = node("details");
+    details.appendChild(node("summary", item.title));
+    item.details.forEach(function (line) {
+      details.appendChild(node("div", line, "dashboard-todo-detail"));
+    });
+    item.subtasks.forEach(function (subtask) {
+      var line = node("div", capitalized(subtask.text), "dashboard-todo-detail dashboard-todo-subtask");
+      line.setAttribute("style", "margin-left:" + subtask.depth + "em");
+      details.appendChild(line);
+    });
+    var row = node("li");
+    row.appendChild(details);
+    return row;
+  }
+
+  function renderTodoLists(widget, lists) {
+    if (!lists.length) {
+      widget.replaceChildren(node("p", "No todo lists found, check data-files.", "dashboard-empty"));
+      return;
+    }
+    var grid = node("div", undefined, "dashboard-lists");
+    lists.forEach(function (list) {
+      if (list.error) {
+        grid.appendChild(node("p", "Unavailable: " + list.error, "dashboard-error"));
+        return;
+      }
+      var section = node("section", undefined, "dashboard-list");
+      section.appendChild(node("h2", list.title));
+      var rows = node("ul");
+      list.items.forEach(function (item) { rows.appendChild(todoRow(item)); });
+      section.appendChild(rows);
+      grid.appendChild(section);
+    });
+    widget.replaceChildren(grid);
+  }
+
+  // data-files lists markdown files, comma-separated, relative to the page.
+  function fetchTodoLists(file) {
+    var url = file.split("/").map(encodeURIComponent).join("/") + "?noredirect";
+    return fetch(url).then(function (response) {
+      if (!response.ok) throw new Error(file + " (" + response.status + ")");
+      return response.text();
+    }).then(function (text) {
+      return parseTodoLists(text, stripMdSuffix(file.split("/").pop()));
+    });
+  }
+
+  function loadTodoLists(widget) {
+    ensureStyles();
+    widget.setAttribute("aria-busy", "true");
+    widget.replaceChildren(node("p", "Loading dashboard…", "dashboard-loading"));
+    var files = (widget.getAttribute("data-files") || "").split(",").map(function (file) {
+      return file.trim();
+    }).filter(Boolean);
+    return Promise.all(files.map(function (file) {
+      return fetchTodoLists(file).catch(function (error) { return [{ error: error.message }]; });
+    })).then(function (results) {
+      renderTodoLists(widget, [].concat.apply([], results));
+      widget.removeAttribute("aria-busy");
+    });
+  }
+
   var api = {
     matches: matches,
     compareEntries: compareEntries,
@@ -495,17 +711,23 @@
     formFields: formFields,
     defaultDue: defaultDue,
     card: card,
+    ensureStyles: ensureStyles,
     capitalized: capitalized,
     firstValue: firstValue,
     estimateValue: estimateValue,
     dueStatus: dueStatus,
-    reloadAfterCreate: reloadAfterCreate
+    reloadAfterCreate: reloadAfterCreate,
+    parseTodoLists: parseTodoLists,
+    renderTodoLists: renderTodoLists,
+    loadTodoLists: loadTodoLists
   };
   if (global) global.IrisDashboard = api;
 
   function start() {
     var widgets = Array.prototype.slice.call(document.querySelectorAll(".dashboard-widget"));
-    if (widgets.length) loadAll(widgets);
+    var boards = widgets.filter(function (widget) { return widgetView(widget) !== "lists"; });
+    if (boards.length) loadAll(boards);
+    widgets.filter(function (widget) { return widgetView(widget) === "lists"; }).forEach(loadTodoLists);
     var forms = Array.prototype.slice.call(document.querySelectorAll("form.dashboard-new"));
     if (forms.length) {
       ensureStyles();

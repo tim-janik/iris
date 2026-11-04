@@ -16,6 +16,7 @@ function fakeElement(tag) {
     childNodes: [],
     setAttribute() {},
     appendChild(child) { this.childNodes.push(child); return child; },
+    prepend(child) { this.childNodes.unshift(child); },
     replaceChildren(...children) { this.childNodes = children; }
   };
 }
@@ -262,4 +263,181 @@ test("uses number/string fallbacks and reports omitted records", () => {
   ], "", 2);
   assert.deepEqual(result.entries.map((entry) => entry.title), ["two", "ten"]);
   assert.equal(result.omitted, 1);
+});
+
+test("parses todo lists from headings and bullets", () => {
+  const text = [
+    "---", "title: Todos", "---",
+    "- Loose item",
+    "## Gardening", "",
+    "- **Mow garden** : Repair mower, fix cable, mow before Sunday",
+    "- **Trim hedge**",
+    "- **Colon inside:** check tools",
+    "  - nested subtask",
+    "Plain text is ignored.",
+    "## House\r",
+    "* Plain bullet\r"
+  ].join("\n");
+  assert.deepEqual(JSON.parse(JSON.stringify(dashboard.parseTodoLists(text, "todos"))), [
+    { title: "todos", items: [{ title: "Loose item", details: [], subtasks: [] }] },
+    { title: "Gardening", items: [
+      { title: "Mow garden", details: ["Repair mower", "Fix cable", "Mow before Sunday"], subtasks: [] },
+      { title: "Trim hedge", details: [], subtasks: [] },
+      { title: "Colon inside", details: ["Check tools"], subtasks: [{ text: "nested subtask", depth: 0 }] }
+    ] },
+    { title: "House", items: [{ title: "Plain bullet", details: [], subtasks: [] }] }
+  ]);
+});
+
+test("parses ordinary Markdown spellings of todo items", () => {
+  const text = [
+    "## Tasks",
+    "  - **Indented** : first",
+    "  - __Underscores__ : second",
+    "  - **Wrapped** :",
+    "    third,",
+    "    fourth",
+    "    - nested subtask",
+    "\t- tab subtask",
+    "- Long plain",
+    "  title",
+    "",
+    "```",
+    "## Example",
+    "- example bullet",
+    "~~~",
+    "```",
+    "~~~",
+    "- tilde example",
+    "```",
+    "~~~",
+    "- **After fences**"
+  ].join("\n");
+  assert.deepEqual(JSON.parse(JSON.stringify(dashboard.parseTodoLists(text, "todos"))), [
+    { title: "Tasks", items: [
+      { title: "Indented", details: ["First"], subtasks: [] },
+      { title: "Underscores", details: ["Second"], subtasks: [] },
+      { title: "Wrapped", details: ["Third", "Fourth"], subtasks: [{ text: "nested subtask", depth: 0 }, { text: "tab subtask", depth: 0 }] },
+      { title: "Long plain title", details: [], subtasks: [] },
+      { title: "After fences", details: [], subtasks: [] }
+    ] }
+  ]);
+});
+
+test("every todo item gets a title, with or without markup", () => {
+  const items = (...bullets) => JSON.parse(JSON.stringify(dashboard.parseTodoLists(bullets.map((b) => "- " + b).join("\n"), "t")[0].items));
+  assert.deepEqual(items(
+    "title : body",
+    "title: body, more",
+    "**title** body",
+    "**title**, body",
+    "__title__ body",
+    "*title* body",
+    "*two words*: body",
+    "_title_ body",
+    "_foo_bar baz",
+    "three word title",
+    "three word title rest body",
+    "short, then body, more",
+    "12:30 call the plumber",
+    "see https://example.com/x today",
+    "title:"
+  ), [
+    { title: "title", details: ["Body"], subtasks: [] },
+    { title: "title", details: ["Body", "More"], subtasks: [] },
+    { title: "title", details: ["Body"], subtasks: [] },
+    { title: "title", details: ["Body"], subtasks: [] },
+    { title: "title", details: ["Body"], subtasks: [] },
+    { title: "title", details: ["Body"], subtasks: [] },
+    { title: "two words", details: ["Body"], subtasks: [] },
+    { title: "title", details: ["Body"], subtasks: [] },
+    { title: "_foo_bar baz", details: [], subtasks: [] },
+    { title: "three word title", details: [], subtasks: [] },
+    { title: "three word title", details: ["Rest body"], subtasks: [] },
+    { title: "short", details: ["Then body", "More"], subtasks: [] },
+    { title: "12:30 call the", details: ["Plumber"], subtasks: [] },
+    { title: "see https://example.com/x today", details: [], subtasks: [] },
+    { title: "title", details: [], subtasks: [] }
+  ]);
+});
+
+test("nested bullets become subtasks with their depth", () => {
+  const text = [
+    "## L",
+    "- **A** : one",
+    "  - sub",
+    "    sub text",
+    "    - deep",
+    "  - next",
+    "  two",
+    "- **B**",
+    "  - only subtask",
+    "- C"
+  ].join("\n");
+  assert.deepEqual(JSON.parse(JSON.stringify(dashboard.parseTodoLists(text, "t")[0].items)), [
+    { title: "A", details: ["One two"], subtasks: [
+      { text: "sub sub text", depth: 0 },
+      { text: "deep", depth: 1 },
+      { text: "next", depth: 0 }
+    ] },
+    { title: "B", details: [], subtasks: [{ text: "only subtask", depth: 0 }] },
+    { title: "C", details: [], subtasks: [] }
+  ]);
+});
+
+test("skips what only looks like a todo item", () => {
+  const titles = (lines) => dashboard.parseTodoLists(lines.join("\n"), "fallback").map((list) => [list.title, list.items.map((i) => i.title)]);
+  assert.deepEqual(JSON.parse(JSON.stringify(titles(["\uFEFF## Bom", "- a"]))), [["Bom", ["a"]]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(titles(["## L", "````", "```", "- fenced", "```", "````", "- a"]))), [["L", ["a"]]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(titles(["## L", "```", "```js", "- fenced", "```", "- a"]))), [["L", ["a"]]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(titles(["## L", "- a", "- - -", "* * *", "- b"]))), [["L", ["a", "b"]]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(titles(["## L", "Notes:", "", "    - code", "- a"]))), [["L", ["a"]]]);
+});
+
+test("loads raw todo files and keeps the others when one fails", async () => {
+  const urls = [];
+  context.fetch = (url) => {
+    urls.push(url);
+    if (url.startsWith("missing")) return Promise.resolve({ ok: false, status: 404 });
+    return Promise.resolve({ ok: true, text: () => Promise.resolve("## Garden\n- a\n") });
+  };
+  const widget = fakeElement("div");
+  widget.getAttribute = () => "my todos/a#1.md, missing.md";
+  widget.removeAttribute = (name) => { widget.removed = name; };
+  await dashboard.loadTodoLists(widget);
+  assert.deepEqual(urls, ["my%20todos/a%231.md?noredirect", "missing.md?noredirect"]);
+  const [list, error] = widget.childNodes[0].childNodes;
+  assert.equal(list.childNodes[0].textContent, "Garden");
+  assert.equal(error.className, "dashboard-error");
+  assert.equal(error.textContent, "Unavailable: missing.md (404)");
+  assert.equal(widget.removed, "aria-busy");
+});
+
+test("only todo rows with details or subtasks are collapsible", () => {
+  const widget = fakeElement("div");
+  dashboard.renderTodoLists(widget, [{ title: "House", items: [
+    { title: "Fix tap", details: ["Check washer"], subtasks: [] },
+    { title: "Clean windows", details: [], subtasks: [] },
+    { title: "Paint", details: [], subtasks: [{ text: "buy, mix", depth: 1 }] }
+  ] }]);
+  const [heading, rows] = widget.childNodes[0].childNodes[0].childNodes;
+  assert.equal(heading.textContent, "House");
+  const [withDetails, plain, withSubtasks] = rows.childNodes;
+  const [, subtask] = withSubtasks.childNodes[0].childNodes;
+  assert.equal(subtask.textContent, "Buy, mix");
+  assert.equal(withDetails.childNodes[0].tagName, "details");
+  assert.equal(withDetails.childNodes[0].childNodes[0].tagName, "summary");
+  assert.equal(plain.textContent, "Clean windows");
+  assert.equal(plain.childNodes.length, 0);
+
+  dashboard.renderTodoLists(widget, []);
+  assert.equal(widget.childNodes[0].className, "dashboard-empty");
+});
+
+test("default styles go before everything else in head", () => {
+  const head = context.document.head = fakeElement("head");
+  head.appendChild(fakeElement("link"));
+  dashboard.ensureStyles();
+  assert.equal(head.childNodes[0].id, "iris-dashboard-style");
+  assert.equal(head.childNodes[1].tagName, "link");
 });
